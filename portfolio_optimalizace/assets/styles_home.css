@@ -1,0 +1,301 @@
+/* 1) proměnné */
+:root {
+    --bg: #f21414;
+    --fg: #eaeaea;
+    --muted: #9aa0a6;
+    --card: #242424;
+    --border: #444;
+    --gradient-bg: linear-gradient(to bottom right, #0e0e0e, #3d3b3b, #00a17b);
+}
+
+html,
+body {
+    height: 100%;
+    max-width: 100%;
+    margin: 0;
+    background: var(--gradient-bg) !important;
+    background-attachment: fixed !important;
+    color: var(--fg);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    padding-top: 0.5%;
+    padding-right: 0.5%;
+    padding-left: 0.5%;
+    padding-bottom: 0.5%;
+
+}
+
+
+
+.dropdown-graph-wrapper {
+    border: 2px solid rgb(255, 255, 255);
+    border-radius: 10px;
+    padding: 15px;
+    background: rgba(0, 0, 0, 0.2);
+    margin-bottom: 20px;
+}
+
+.row-container {
+    display: flex;
+    flex-direction: row;
+    gap: 20px;
+    width: 100%;
+}
+
+.row-container>div,
+.row-container>.dash-graph {
+    background-color: rgba(255, 255, 255, 0.05);
+    padding: 10px;
+    border-radius: 10px;
+}
+
+.nadpis {
+    text-align: center;
+    font-size: 4.5rem;
+    font-weight: bold;
+    color: rgb(255, 255, 255);
+
+}
+
+.podnadpis {
+    text-align: center;
+    font-size: 2rem;
+    font-weight: bold;
+    color: rgb(255, 255, 255);
+
+}
+
+.volne {
+    position: fixed;
+    top: 10;
+    left: 10;
+    margin: 0;
+    z-index: 1000;
+}
+
+.volne input {
+    transform: scale(1.03);
+    padding: 7px 12px;
+    font-size: 30px;
+    text-align: center;
+    border-radius: 6px;
+    transition: all 0.3s ease;
+    width: 200px;
+    height: 100px;
+}
+
+.volne input:hover {
+
+    transform: scale(1.07);
+}
+
+.volne .CalendarDay__button {
+    font-size: 30px;
+}
+
+.navbar {
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.nav-link {
+    font-size: 1.1rem;
+    font-weight: 500;
+}
+
+.tab-content {
+    background-color: white;
+    border-radius: 8px;
+    padding: 20px;
+}
+
+.NavbarContainer {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    margin-top: 0.8%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 0;
+    background-color: transparent;
+}
+
+
+
+.NavbarButton {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 300px;
+    height: 200px;
+    text-decoration: none;
+    color: white;
+    font-weight: bold;
+    font-size: 28px;
+    border-left: 1px solid white;
+    transition: all 0.3s ease;
+}
+
+.NavbarButton:first-child {
+    border-left: none;
+}
+
+.NavbarButton:hover {
+    background-color: #3d3b3b;
+    border-left: 1px solid white;
+    border-right: 1px solid white;
+    transform: scale(1.05);
+}
+
+.dropdown {
+    position: relative;
+    display: inline-block;
+    font-family: inherit;
+    color: black;
+    height: 60px;
+    width: 1000px;
+    align-items: center;
+    font-size: 20px;
+}
+
+.dropdown-toggle {
+    background: linear-gradient(135deg, #ff7b00, #ff5100);
+    color: white;
+    padding: 12px 20px;
+    font-size: 18px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+}
+
+.dropdown:hover {
+    box-shadow: 1000 60px 140px rgba(0, 0, 0, 0.3);
+}
+
+.dropdown-menu {
+    display: none;
+    position: absolute;
+    background-color: #222;
+    min-width: 220px;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+    z-index: 1000;
+    animation: fadeIn 0.25s ease;
+}
+
+.dropdown-menu a {
+    color: white;
+    padding: 12px 16px;
+    text-decoration: none;
+    display: block;
+    transition: background-color 0.3s ease;
+}
+
+
+.dash-table-container .modern-table {
+    border: none;
+    border-radius: 8px;
+    overflow: hidden;
+    font-family: 'Segoe UI', sans-serif;
+    font-size: 14px;
+    background-color: #1e1e1e;
+}
+
+.dash-table-container .modern-table .dash-header {
+    background-color: #333 !important;
+    color: #fff !important;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 2px solid #ff6600;
+}
+
+.dash-table-container .modern-table .dash-cell {
+    background-color: #e01515 !important;
+    color: #f0f0f0 !important;
+    padding: 8px 12px !important;
+    border-bottom: 1px solid #444;
+    transition: background-color 0.2s ease-in-out;
+}
+
+
+
+
+.top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
+}
+
+.date-picker {
+    font-size: 40px;
+    color: #fff;
+    background: transparent !important;
+    border-radius: 0;
+}
+
+.date-picker .SingleDatePicker,
+.date-picker .SingleDatePickerInput,
+.date-picker .SingleDatePickerInput__withBorder,
+.date-picker .DateInput {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+.date-picker .DateInput_input {
+    padding: 13px 10px;
+    font-size: 25px;
+    text-align: center;
+    width: 200px;
+    height: 80px;
+    background: #e0e0e0;
+    color: #111;
+    border: none;
+    outline: none;
+    border-radius: 12px;
+    transition: all 0.3s ease;
+}
+
+.date-picker .DateInput_input__focused {
+    border: none !important;
+    box-shadow: none !important;
+}
+
+.date-picker .DateInput_fang {
+    display: none !important;
+}
+
+.date-picker .DateInput_input:hover {
+    box-shadow:
+        inset 2px 2px 4px rgba(0, 0, 0, 0.25),
+        inset -2px -2px 4px rgba(255, 255, 255, 0.7),
+        0 3px 6px rgba(0, 0, 0, 0.25);
+}
+
+.upload-button {
+    background: #e0e0e0;
+    width: 200px;
+    height: 80px;
+    color: #111;
+    font-size: 22px;
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+}
+
+.upload-button:hover {
+    box-shadow: inset 2px 2px 4px rgba(0, 0, 0, 0.25),
+        inset -2px -2px 4px rgba(255, 255, 255, 0.7),
+        0 3px 6px rgba(0, 0, 0, 0.25);
+}
+
+.upload-button:active {
+    box-shadow: inset 5px 5px 10px rgba(0, 0, 0, 0.35),
+        inset -5px -5px 10px rgba(255, 255, 255, 0.9);
+}
