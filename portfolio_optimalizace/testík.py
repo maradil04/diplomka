@@ -177,3 +177,76 @@ def investovany_kapital(target_date, df):
     return dfx[["Date","Type","Total_clean"]].reset_index()
 print(investovany_kapital(final_date, df))
 # %%
+df_fallback = pd.read_csv("portfolio.csv", sep=None, engine="python")
+df = df_fallback.copy()
+df_default = df.copy()
+tickers = ["AMEM"]
+df_prices = pd.read_csv("df_prices.csv")
+df_prices_all = pd.read_csv("df_prices.csv")
+df_prices["Ticker_clean"] = df_prices["Ticker"].str.split(".").str[0]
+df_prices_all = df_prices.copy()
+
+def hodnota_portfolia_v_case(df, df_prices):
+    df = df.sort_values(by="Date")
+    df = df[df["Type"].isin(["BUY - MARKET", "SELL - MARKET"])]
+
+    df_copy = df.copy()
+    df_copy["Total_clean"] = (
+        df_copy["Total Amount"].astype(str)
+        .str.replace("€", "", regex=False)
+        .str.replace(",", "", regex=False)
+        .astype(float)
+    )
+    df_copy["Total_quant_clean"] = np.where(
+        df_copy["Type"] == "SELL - MARKET",
+        -df_copy["Quantity"],
+        df_copy["Quantity"]
+    )
+    df_copy["Total_clean"] = np.where(
+        df_copy["Type"] == "SELL - MARKET",
+        -df_copy["Total_clean"],
+        df_copy["Total_clean"]
+    )
+
+    df_copy["CumulativeShares"] = df_copy.groupby("Ticker")["Total_quant_clean"].cumsum()
+    df_copy = df_copy[["Date", "Ticker", "CumulativeShares"]]
+
+    df_copy["Date"] = pd.to_datetime(df_copy["Date"]).dt.tz_localize(None).dt.normalize()
+    df_prices["date"] = pd.to_datetime(df_prices["date"]).dt.tz_localize(None).dt.normalize()
+
+    min_date = df_copy["Date"].min()
+    df_prices = df_prices[df_prices["date"] >= min_date]
+
+    final = pd.merge(
+        df_prices,
+        df_copy,
+        left_on=["date", "Ticker_clean"],
+        right_on=["Date", "Ticker"],
+        how="left"
+    )
+
+    final = final.sort_values(by=["Ticker_clean", "date"])
+    final["CumulativeShares"] = final.groupby("Ticker_clean")["CumulativeShares"].ffill()
+
+    final["CumulativeShares"] = final["CumulativeShares"].fillna(0)
+
+    final["position_value"] = final["CumulativeShares"] * final["adjusted_close"]
+    final["portfolio_value"] = final.groupby("date")["position_value"].transform("sum")
+
+    pos_mask = final["portfolio_value"] > 0
+    if pos_mask.any():
+        first_valid_date = final.loc[pos_mask, "date"].min()
+        final = final[final["date"] >= first_valid_date]
+
+    final = final.reset_index(drop=True)
+
+    return final
+
+def logy(series):
+    return np.log(series +1e-10).diff().fillna(0)
+data = hodnota_portfolia_v_case(df, df_prices_all)
+print(logy(data["portfolio_value"]))
+# %%
+df_prices = pd.read_csv("df_prices.csv")
+print(df_prices["date"].max())
+# %%
