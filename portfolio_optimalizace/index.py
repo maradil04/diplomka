@@ -6,7 +6,7 @@ navbar = html.Nav(
     [
         dcc.Link("Přehled", href="/", className="NavbarButton"),
         dcc.Link("Predikce", href="/predikce", className="NavbarButton"),
-        dcc.Link("Rebalance", href="/contact", className="NavbarButton"),
+        dcc.Link("Rebalance", href="/rebalance", className="NavbarButton"),
     ],
     className="NavbarContainer"
 )

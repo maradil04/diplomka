@@ -1,0 +1,326 @@
+/* assets/rebalance.css */
+
+/* =========================
+   PAGE / CARD
+   ========================= */
+.rb-page {
+    min-height: calc(100vh - 80px);
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 260px 16px 48px;
+    /* top uprav podle navbaru */
+}
+
+.rb-card {
+    border: 2px solid rgb(255, 255, 255);
+    border-radius: 10px;
+    padding: 22px;
+    /* 15px je dost těsné – 22px vypadá líp */
+    background: rgba(0, 0, 0, 0.2);
+    margin-bottom: 20px;
+}
+
+.rb-title {
+    margin: 0 0 18px;
+    font-size: 28px;
+    font-weight: 750;
+    letter-spacing: 0.2px;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.95);
+}
+
+/* =========================
+   CONTROLS LAYOUT
+   ========================= */
+.rb-controls {
+    display: grid;
+    gap: 14px;
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.rb-label {
+    font-size: 14px;
+    opacity: 0.88;
+    margin-bottom: -8px;
+    color: rgba(255, 255, 255, 0.90);
+}
+
+/* =========================
+   SLIDER (rc-slider)
+   ========================= */
+.rb-slider {
+    padding: 10px 6px 2px;
+}
+
+.rb-slider .rc-slider {
+    margin-top: 8px;
+}
+
+.rb-slider .rc-slider-rail {
+    height: 8px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.10);
+}
+
+.rb-slider .rc-slider-track {
+    height: 8px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #c0f2e6, #00a17b);
+    box-shadow: 0 0 18px rgba(0, 161, 123, 0.25);
+}
+
+.rb-slider .rc-slider-handle {
+    width: 18px;
+    height: 18px;
+    margin-top: -5px;
+    /* zarovnání na track */
+    border-radius: 999px;
+    border: 2px solid rgba(255, 255, 255, 0.75);
+    background: rgba(15, 15, 18, 0.95);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+    transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.rb-slider .rc-slider-handle:hover {
+    transform: scale(1.06);
+    border-color: rgba(255, 255, 255, 0.95);
+}
+
+.rb-slider .rc-slider-handle:active {
+    transform: scale(1.10);
+}
+
+/* tooltip */
+.rb-slider .rc-slider-tooltip-inner {
+    background: rgba(10, 10, 12, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    color: rgba(255, 255, 255, 0.92);
+    border-radius: 10px;
+    padding: 6px 10px;
+    font-weight: 750;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+}
+
+.rb-slider .rc-slider-tooltip-arrow {
+    border-top-color: rgba(10, 10, 12, 0.92) !important;
+}
+
+/* =========================
+   ACTIONS: CHECK + BUTTON (same size)
+   ========================= */
+.rb-actions {
+    display: flex;
+    justify-content: center;
+    align-items: stretch;
+    /* stejná výška v řádku */
+    gap: 14px;
+    margin-top: 12px;
+    flex-wrap: nowrap;
+}
+
+/* každý box má stejnou šířku */
+.rb-action {
+    flex: 0 0 240px;
+    width: 240px;
+    max-width: 240px;
+}
+
+/* =========================
+   PILL STYLE (shared)
+   ========================= */
+.rb-check-label,
+.rb-btn.rb-pill {
+    width: 100%;
+    height: 54px;
+    min-height: 54px;
+    padding: 0 14px;
+    border-radius: 18px;
+    box-sizing: border-box;
+
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(10px);
+
+    color: rgba(255, 255, 255, 0.92);
+    font-size: 16px;
+    font-weight: 650;
+    line-height: 1;
+    letter-spacing: 0.2px;
+
+    transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+/* hover */
+.rb-check-label:hover,
+.rb-btn.rb-pill:hover {
+    transform: translateY(-1px);
+    background: rgba(255, 255, 255, 0.07);
+    border-color: rgba(255, 255, 255, 0.18);
+}
+
+/* =========================
+   CHECKBOX (custom)
+   ========================= */
+.rb-checklist {
+    width: 100%;
+    display: block;
+}
+
+/* Dash občas přidává svoje label styly, tohle to stabilizuje */
+.rb-check-label {
+    cursor: pointer;
+    user-select: none;
+}
+
+/* input square */
+.rb-check-input {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.30);
+    background: rgba(0, 0, 0, 0.22);
+    display: inline-grid;
+    place-content: center;
+    flex: 0 0 auto;
+    transition: transform 120ms ease, border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+}
+
+.rb-check-input::before {
+    content: "";
+    width: 16px;
+    height: 16px;
+    border-radius: 5px;
+    transform: scale(0);
+    transition: transform 120ms ease;
+    background: linear-gradient(135deg, #adffec, #00a17b);
+    box-shadow: 0 0 18px rgba(0, 161, 123, 0.45);
+}
+
+.rb-check-input:checked {
+    border-color: rgba(255, 255, 255, 0.60);
+    background: rgba(0, 0, 0, 0.28);
+    box-shadow: 0 0 0 4px rgba(0, 161, 123, 0.14);
+    transform: scale(1.02);
+}
+
+.rb-check-input:checked::before {
+    transform: scale(1);
+}
+
+/* =========================
+   BUTTON RESET (so it matches pill)
+   ========================= */
+.rb-btn {
+    appearance: none;
+    -webkit-appearance: none;
+    cursor: pointer;
+    outline: none;
+    background: rgba(255, 255, 255, 0.05);
+    /* explicit */
+}
+
+/* focus ring */
+.rb-btn.rb-pill:focus-visible {
+    box-shadow:
+        0 0 0 4px rgba(0, 161, 123, 0.18),
+        0 14px 40px rgba(0, 0, 0, 0.35);
+}
+
+/* active */
+.rb-btn.rb-pill:active {
+    transform: translateY(0px);
+}
+
+/* =========================
+   DIVIDER / STATUS
+   ========================= */
+.rb-divider {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.08);
+    margin: 18px 0 14px;
+}
+
+.rb-status {
+    min-height: 22px;
+    margin-bottom: 12px;
+    text-align: center;
+    font-size: 14px;
+    color: rgba(0, 255, 180, 0.65);
+    /* jemně zelená */
+}
+
+.rb-status>div {
+    margin: 4px 0;
+}
+
+/* =========================
+   DATATABLE DARK SKIN
+   ========================= */
+.rb-card .dash-table-container {
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.rb-card .dash-spreadsheet-container {
+    background: rgba(0, 0, 0, 0.18) !important;
+}
+
+.rb-card .dash-header {
+    background: rgba(255, 255, 255, 0.06) !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+.rb-card .dash-cell {
+    background: rgba(0, 0, 0, 0.10) !important;
+    color: rgba(255, 255, 255, 0.90) !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+    border-right: 1px solid rgba(255, 255, 255, 0.04) !important;
+}
+
+.rb-card .dash-row:hover .dash-cell {
+    background: rgba(255, 255, 255, 0.04) !important;
+}
+
+/* pagination icons */
+.rb-card .previous-page,
+.rb-card .next-page,
+.rb-card .first-page,
+.rb-card .last-page {
+    filter: brightness(1.2);
+}
+
+/* =========================
+   RESPONSIVE
+   ========================= */
+@media (max-width: 720px) {
+    .rb-actions {
+        flex-wrap: wrap;
+    }
+
+    .rb-action {
+        flex: 0 0 min(320px, 100%);
+        width: min(320px, 100%);
+        max-width: 100%;
+    }
+}
+
+@media (max-width: 520px) {
+    .rb-card {
+        padding: 20px 16px;
+    }
+
+    .rb-title {
+        font-size: 22px;
+    }
+}
