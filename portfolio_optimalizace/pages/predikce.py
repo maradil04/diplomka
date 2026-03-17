@@ -613,6 +613,138 @@ def update_ticker_dropdown(stored_data):
 
 
 
+@callback(
+    Output("portfolio-arima2", "children"),
+    Input("stored-data", "data"),
+)
+def portfolio_mean_plus_volatility_forecast(stored_data):
+    if stored_data is not None:
+        try:
+            df_local = pd.DataFrame(stored_data)
+        except Exception:
+            df_local = df_default.copy()
+    else:
+        df_local = df_default.copy()
+
+    if df_local.empty or "Ticker" not in df_local.columns:
+        return html.Div([html.H3("Predikce - Portfolio"), html.P("V uploadovanem souboru chybi data portfolia.")])
+
+    tickers_clean = df_local["Ticker"].astype(str).str.split(".").str[0].dropna().unique().tolist()
+    prices_filtered = df_prices_all[df_prices_all["Ticker_clean"].isin(tickers_clean)].copy()
+    if prices_filtered.empty:
+        return html.Div([html.H3("Predikce - Portfolio"), html.P("Nenalezena cenova data pro tickery z portfolia.")])
+
+    try:
+        portfolio_hist = hodnota_portfolia_v_case(df_local, prices_filtered)
+    except Exception as e:
+        return html.Div([html.H3("Predikce - Portfolio"), html.P(f"Nepodarilo se sestavit historii portfolia: {e}")])
+
+    if portfolio_hist.empty or "portfolio_value" not in portfolio_hist.columns:
+        return html.Div([html.H3("Predikce - Portfolio"), html.P("Nedostatek dat pro vypocet casove rady portfolia.")])
+
+    price_series = (
+        portfolio_hist[["date", "portfolio_value"]]
+        .dropna(subset=["date", "portfolio_value"])
+        .drop_duplicates(subset=["date"])
+        .sort_values("date")
+        .set_index("date")["portfolio_value"]
+        .astype(float)
+    )
+    price_series = price_series[price_series > 0].dropna()
+    price_series = price_series.asfreq("B").ffill()
+
+    forecast_steps = 30
+    min_obs = 80
+    ticker = "Portfolio"
+
+    if len(price_series) < min_obs:
+        hist = pd.DataFrame({"date": price_series.index, "adjusted_close": price_series.values})
+        return html.Div([
+            html.H3(f"Predikce - {ticker}"),
+            html.P(f"Malo cenovych pozorovani ({len(price_series)}), minimum je {min_obs}."),
+            dcc.Graph(figure=px.line(hist, x="date", y="adjusted_close", title=f"Historie ceny - {ticker}"))
+        ])
+
+    log_ret = np.log(price_series).diff().dropna()
+    if len(log_ret) < min_obs:
+        return html.Div([
+            html.H3(f"Predikce - {ticker}"),
+            html.P(f"Malo returnu ({len(log_ret)}), minimum je {min_obs}."),
+        ])
+
+    mean_model, mean_label, mean_rmse, season_period = pick_mean_model_rmse(log_ret)
+    if mean_model is None:
+        return html.Div([html.H3(f"Predikce - {ticker}"), html.P("Nepodarilo se najit stabilni ARIMA/SARIMA model.")])
+
+    future_index = make_future_index(price_series.index, forecast_steps)
+    future_mean_lr = pd.Series(mean_model.forecast(steps=forecast_steps).values, index=future_index, name="mu_lr")
+
+    resid = pd.Series(getattr(mean_model, "resid", None))
+    if resid is None or resid.empty:
+        fitted = pd.Series(getattr(mean_model, "fittedvalues", None))
+        if fitted is not None and not fitted.empty:
+            aligned = log_ret.iloc[-len(fitted):]
+            resid = pd.Series(aligned.values - fitted.values)
+        else:
+            resid = log_ret - log_ret.mean()
+
+    has_arch, arch_p, arch_stat = detect_arch_effect(resid, alpha=0.05, lags=12)
+    sigma_future = pd.Series(np.full(forecast_steps, np.nan), index=future_index, name="sigma")
+    garch_label = "NO-GARCH"
+    garch_rmse = np.nan
+
+    if has_arch:
+        resid_series = pd.Series(resid).dropna().astype(float)
+        train_r, test_r = train_test_split_series(resid_series, test_size=0.2)
+        best_pq, garch_rmse, garch_model, _ = grid_search_garch_rmse(
+            train_r, test_r,
+            p_range=range(1, 4),
+            q_range=range(1, 4),
+        )
+        if best_pq is not None:
+            p_opt, q_opt = best_pq
+            garch_label = f"GARCH{best_pq}"
+            am = arch_model(resid_series, mean="Zero", vol="GARCH", p=p_opt, q=q_opt, dist="normal")
+            res = am.fit(disp="off")
+            fcast = res.forecast(horizon=forecast_steps)
+            sigma2 = fcast.variance.values[-1, :]
+            sigma_future = pd.Series(np.sqrt(sigma2), index=future_index, name="sigma")
+
+    last_price = float(price_series.iloc[-1])
+    price_pred = returns_to_price_path(last_price, future_mean_lr)
+    if sigma_future.isna().all():
+        hist_sigma = float(log_ret.std(ddof=1))
+        sigma_future = pd.Series(np.full(forecast_steps, hist_sigma), index=future_index, name="sigma")
+
+    lower1, upper1 = sigma_to_price_bands(price_pred, sigma_future, k=1.0)
+    lower2, upper2 = sigma_to_price_bands(price_pred, sigma_future, k=2.0)
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=price_series.index, y=price_series.values, mode="lines", name=f"{ticker} - historie", line=dict(width=2)))
+    fig.add_trace(go.Scatter(x=price_pred.index, y=price_pred.values, mode="lines", name=f"{ticker} - predikce (mean)", line=dict(width=2, dash="dot")))
+    fig.add_trace(go.Scatter(x=upper2.index, y=upper2.values, mode="lines", line=dict(width=0), name="+2sigma", showlegend=False))
+    fig.add_trace(go.Scatter(x=lower2.index, y=lower2.values, mode="lines", line=dict(width=0), name="-2sigma", fill="tonexty", fillcolor="rgba(255,255,255,0.08)", showlegend=True))
+    fig.add_trace(go.Scatter(x=upper1.index, y=upper1.values, mode="lines", line=dict(width=0), name="+1sigma", showlegend=False))
+    fig.add_trace(go.Scatter(x=lower1.index, y=lower1.values, mode="lines", line=dict(width=0), name="Volatilni pasmo +/-1sigma", fill="tonexty", fillcolor="rgba(0,255,136,0.12)", showlegend=True))
+
+    extra = f"{mean_label} (RMSE={mean_rmse:.4f})"
+    extra += f" | ARCH p={arch_p:.4g} -> {garch_label}"
+    if np.isfinite(garch_rmse):
+        extra += f" (RMSE={garch_rmse:.4f})"
+
+    fig.update_layout(
+        showlegend=True,
+        legend=dict(bgcolor="rgba(0,0,0,0.2)", font=dict(color="white")),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="#303030",
+        height=550,
+        margin=dict(t=50, b=40, l=40, r=40),
+        title=dict(text=f"{ticker}: predikce ceny + volatilni pasmo | {extra}", y=1, x=0.5, xanchor="center", yanchor="top", font=dict(size=20, color="white", family="Arial")),
+        xaxis=dict(title=dict(text="Datum", font=dict(size=16, color="white", family="Arial")), tickfont=dict(color="white", family="Arial"), showgrid=True, gridcolor="rgba(255,255,255,0.1)", gridwidth=1),
+        yaxis=dict(title=dict(text="Cena", font=dict(size=16, color="white", family="Arial")), tickfont=dict(color="white", family="Arial"), showgrid=True, gridcolor="rgba(255,255,255,0.1)", gridwidth=1),
+    )
+
+    return html.Div([dcc.Graph(figure=fig)])
 ################################################x
 @callback(
     Output("arima2", "children"),
@@ -846,6 +978,20 @@ layout = html.Div([
     html.Br(),
     html.Br(),
     html.H1("Predikce jednotlivých aktiv a portfolia", className = "nadpis_predikce"),
+    html.Div(
+        className="dropdown-graph-wrapper",
+        children=[
+            html.H2("ARIMA predikce celeho portfolia:"),
+            dcc.Loading(
+                id="loading-forecast-portfolio",
+                type="default",
+                color="#00a17b",
+                children=html.Div(id="portfolio-arima2", className="graph")
+            ),
+        ]
+    ),
+
+    html.Br(),
     
     
     html.Div(

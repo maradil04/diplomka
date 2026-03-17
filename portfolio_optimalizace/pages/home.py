@@ -54,6 +54,17 @@ def _force_naive_scalar(ts):
     ts = ts.tz_convert(None)      
     return ts.normalize()
 
+def _parse_money_series(series):
+    s = series.fillna("").astype(str).str.strip()
+    s = s.str.replace("\u00A0", "", regex=False).str.replace(" ", "", regex=False)
+    s = s.str.replace("€", "", regex=False).str.replace("â‚¬", "", regex=False)
+    has_comma = s.str.contains(",", regex=False)
+    has_dot = s.str.contains(".", regex=False)
+    s = s.where(~(has_comma & ~has_dot), s.str.replace(",", ".", regex=False))
+    s = s.where(~(has_comma & has_dot), s.str.replace(",", "", regex=False))
+    s = s.str.replace(r"[^0-9.\-]", "", regex=True)
+    return pd.to_numeric(s, errors="coerce")
+
 def sjednoceni(target_date, data):
     target_date = pd.to_datetime(target_date, utc=True).tz_convert(None).normalize()
 
@@ -1133,6 +1144,114 @@ def graf_portfolio_v_case(freq, vybrane_datum, stored_data):
 # Callback na upload nových csv
 # ---------------------------------------------------------------------------
 @callback(
+    Output("monthly-dividends-graph", "figure"),
+    Input("stored-data", "data"),
+    Input("vyber-datum", "date"),
+)
+def monthly_dividends_graph(stored_data, _selected_date):
+    def _placeholder(msg):
+        fig = go.Figure()
+        fig.add_annotation(
+            text=msg,
+            xref="paper", yref="paper", x=0.5, y=0.5,
+            showarrow=False,
+            font=dict(size=16, color="white"),
+        )
+        fig.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="#303030",
+            xaxis=dict(visible=False),
+            yaxis=dict(visible=False),
+        )
+        return fig
+
+    if isinstance(stored_data, list):
+        df_local = pd.DataFrame(stored_data)
+    elif isinstance(stored_data, dict) and stored_data.get("records"):
+        df_local = pd.DataFrame(stored_data["records"])
+    elif stored_data is None:
+        df_local = df_default.copy()
+    else:
+        df_local = pd.DataFrame(stored_data)
+
+    required = {"Type", "Date", "Total Amount"}
+    if df_local.empty or not required.issubset(set(df_local.columns)):
+        return _placeholder("Chybi data pro vypocet mesicnich dividend.")
+
+    all_dates = pd.to_datetime(df_local["Date"], errors="coerce", utc=True).dt.tz_convert(None).dropna()
+    if all_dates.empty:
+        return _placeholder("Chybi validni datumy pro timeline.")
+
+    month_start = all_dates.min().to_period("M").to_timestamp()
+    month_end = all_dates.max().to_period("M").to_timestamp()
+    full_months = pd.DataFrame({"month": pd.date_range(month_start, month_end, freq="MS")})
+
+    div = df_local[df_local["Type"].astype(str).str.contains("DIVIDEND", na=False)].copy()
+    if div.empty:
+        monthly = full_months.copy()
+        monthly["Total_clean"] = 0.0
+    else:
+        div["Date"] = pd.to_datetime(div["Date"], errors="coerce", utc=True).dt.tz_convert(None)
+        div["Total_clean"] = _parse_money_series(div["Total Amount"])
+        div = div.dropna(subset=["Date", "Total_clean"])
+        if div.empty:
+            monthly = full_months.copy()
+            monthly["Total_clean"] = 0.0
+        else:
+            div["month"] = div["Date"].dt.to_period("M").dt.to_timestamp()
+            monthly = div.groupby("month", as_index=False)["Total_clean"].sum().sort_values("month")
+            monthly = full_months.merge(monthly, on="month", how="left").fillna({"Total_clean": 0.0})
+
+    fig = go.Figure(
+        data=[
+            go.Bar(
+                x=monthly["month"],
+                y=monthly["Total_clean"],
+                marker_color="#00a17b",
+                width=1000 * 60 * 60 * 24 * 20,  # fixed ~20-day width to avoid edge stretching
+                name="Dividendy",
+            )
+        ]
+    )
+    fig.update_layout(
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='#303030',
+        height=500,
+        margin=dict(t=40, b=40, l=40, r=40),
+        title=dict(
+            text="Mesicni dividendovy prijem",
+            y=1, x=0.5, xanchor='center', yanchor='top',
+            font=dict(size=24, color='white', family='Arial')
+        ),
+        xaxis=dict(
+            title=dict(text="Mesic", font=dict(size=18, color='white', family='Arial')),
+            tickfont=dict(color='white', family='Arial'),
+            showgrid=True, gridcolor='rgba(255,255,255,0.1)', gridwidth=1,
+            type="date",
+            dtick="M1",
+            tickformat="%Y-%m",
+        ),
+        yaxis=dict(
+            title=dict(text="Castka", font=dict(size=18, color='white', family='Arial')),
+            tickfont=dict(color='white', family='Arial'),
+            showgrid=True, gridcolor='rgba(255,255,255,0.1)', gridwidth=1,
+            rangemode="tozero",
+        ),
+        showlegend=False,
+        bargap=0.2,
+    )
+    fig.update_xaxes(
+        tickmode="array",
+        tickvals=monthly["month"],
+        ticktext=monthly["month"].dt.strftime("%Y-%m"),
+        range=[
+            monthly["month"].min() - pd.Timedelta(days=15),
+            monthly["month"].max() + pd.Timedelta(days=15),
+        ],
+    )
+    return fig
+
+@callback(
     Output('stored-data', 'data'),
     Input('upload-data', 'contents'),
     State('upload-data', 'filename')
@@ -1275,6 +1394,13 @@ layout = html.Div(
                                         dcc.Graph(id="vystup_fee_div", className="mini-graph"),
                                     ],
                                 )
+                            ],
+                        ),
+                        html.Div(
+                            className="dropdown-graph-wrapper",
+                            children=[
+                                html.H2("Dividendy po mesicich"),
+                                dcc.Graph(id="monthly-dividends-graph", className="graph"),
                             ],
                         ),
                     ],

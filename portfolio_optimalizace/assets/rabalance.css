@@ -324,3 +324,44 @@
         font-size: 22px;
     }
 }
+
+
+.rb-grid {
+    width: min(12000px, 100%);
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+
+    align-items: stretch;
+    /* <-- aby se buňky natahovaly */
+    justify-items: stretch;
+    /* <-- aby karta vyplnila buňku */
+}
+
+/* každá karta: sloupec + stejné rozložení */
+.rb-card {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    /* <-- vyplní výšku grid buňky */
+}
+
+/* status a divider fixně nahoře, table dolů */
+.rb-divider {
+    margin-top: 14px;
+}
+
+.rb-status {
+    margin-bottom: 10px;
+}
+
+/* DataTable kontejner ať zabere zbytek a sedí dole */
+.rb-card .dash-table-container {
+    margin-top: auto;
+    /* <-- tlačí tabulku dolů */
+}
+
+/* volitelně: sjednotí výšku ovládacích prvků, aby se karty nerozjížděly */
+.rb-actions {
+    margin-top: 10px;
+}
