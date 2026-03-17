@@ -13,6 +13,7 @@
 }
 
 .rb-card {
+    position: relative;
     border: 2px solid rgb(255, 255, 255);
     border-radius: 10px;
     padding: 22px;
@@ -263,6 +264,30 @@
     margin: 4px 0;
 }
 
+.rb-table-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin: 4px 0 8px;
+}
+
+.rb-copy-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.95);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.rb-copy-btn:hover {
+    border-color: rgba(255, 255, 255, 0.7);
+    background: rgba(0, 161, 123, 0.28);
+}
+
 /* =========================
    DATATABLE DARK SKIN
    ========================= */
@@ -364,4 +389,56 @@
 /* volitelně: sjednotí výšku ovládacích prvků, aby se karty nerozjížděly */
 .rb-actions {
     margin-top: 10px;
+}
+
+.rb-info {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 20px;
+    height: 20px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    color: rgba(255, 255, 255, 0.92);
+    background: rgba(0, 0, 0, 0.35);
+    font-size: 12px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: help;
+    user-select: none;
+    z-index: 3;
+}
+
+.rb-info:hover {
+    background: rgba(0, 161, 123, 0.35);
+    border-color: rgba(255, 255, 255, 0.8);
+}
+
+.rb-info::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    top: 26px;
+    right: 0;
+    width: min(360px, 70vw);
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgba(12, 12, 16, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.95);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.35;
+    white-space: normal;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+    opacity: 0;
+    transform: translateY(-4px);
+    pointer-events: none;
+    transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.rb-info:hover::after {
+    opacity: 1;
+    transform: translateY(0);
 }

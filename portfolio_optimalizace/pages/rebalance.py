@@ -14,6 +14,34 @@ df_prices_all = pd.read_csv("df_prices.csv")
 df_prices["Ticker_clean"] = df_prices["Ticker"].str.split(".").str[0]
 df_prices_all = df_prices.copy()
 
+def _portfolio_tickers_from_store(stored_data):
+    try:
+        if isinstance(stored_data, list):
+            df_local = pd.DataFrame(stored_data)
+        elif isinstance(stored_data, dict) and stored_data.get("records"):
+            df_local = pd.DataFrame(stored_data["records"])
+        else:
+            df_local = df_default.copy()
+        if "Ticker" in df_local.columns:
+            return set(df_local["Ticker"].dropna().astype(str))
+    except Exception:
+        pass
+    return set(df_default["Ticker"].dropna().astype(str))
+
+def _table_to_tsv(rows, columns):
+    if not rows:
+        return ""
+    headers = [c["name"] if isinstance(c, dict) else str(c) for c in columns]
+    ids = [c["id"] if isinstance(c, dict) else str(c) for c in columns]
+    lines = ["\t".join(headers)]
+    for r in rows:
+        line = []
+        for cid in ids:
+            v = r.get(cid, "")
+            line.append("" if v is None else str(v))
+        lines.append("\t".join(line))
+    return "\n".join(lines)
+
 def prices_to_returns(df_prices: pd.DataFrame) -> pd.DataFrame:
     """
     Vrátí wide returns DF: index=Date, columns=Tickers, values=daily returns.
@@ -297,7 +325,7 @@ def run_rebalance(n_clicks, stored_data, lam, longonly_values):
 
     # 2) (Volitelné) omez na tickery z portfolia
     try:
-        portfolio_tickers = set(df["Ticker"].dropna().astype(str))
+        portfolio_tickers = _portfolio_tickers_from_store(stored_data)
         common = [t for t in rets.columns if t in portfolio_tickers]
         if len(common) >= 2:
             rets = rets[common]
@@ -377,7 +405,7 @@ def run_risk_parity(n_clicks, stored_data, longonly_values, gross_cap):
 
     # portfolio tickers only (volitelné)
     try:
-        portfolio_tickers = set(df["Ticker"].dropna().astype(str))
+        portfolio_tickers = _portfolio_tickers_from_store(stored_data)
         common = [t for t in rets.columns if t in portfolio_tickers]
         if len(common) >= 2:
             rets = rets[common]
@@ -448,7 +476,7 @@ def run_cvar(n_clicks, stored_data, alpha, longonly_values):
 
     # omez na tickery v portfoliu (volitelné)
     try:
-        portfolio_tickers = set(df["Ticker"].dropna().astype(str))
+        portfolio_tickers = _portfolio_tickers_from_store(stored_data)
         common = [t for t in rets.columns if t in portfolio_tickers]
         if len(common) >= 2:
             rets = rets[common]
@@ -481,6 +509,39 @@ def run_cvar(n_clicks, stored_data, alpha, longonly_values):
 
     return out, status
 
+@callback(
+    Output("mv-clip", "content"),
+    Input("mv-table", "data"),
+)
+def set_mv_clipboard(rows):
+    cols = [
+        {"name": "Ticker", "id": "ticker"},
+        {"name": "Weight", "id": "weight"},
+    ]
+    return _table_to_tsv(rows or [], cols)
+
+@callback(
+    Output("rp-clip", "content"),
+    Input("rp-table", "data"),
+)
+def set_rp_clipboard(rows):
+    cols = [
+        {"name": "Ticker", "id": "ticker"},
+        {"name": "Weight", "id": "weight"},
+        {"name": "Risk contrib", "id": "rc"},
+    ]
+    return _table_to_tsv(rows or [], cols)
+
+@callback(
+    Output("cvar-clip", "content"),
+    Input("cvar-table", "data"),
+)
+def set_cvar_clipboard(rows):
+    cols = [
+        {"name": "Ticker", "id": "ticker"},
+        {"name": "Weight", "id": "weight"},
+    ]
+    return _table_to_tsv(rows or [], cols)
 
 
 
@@ -544,6 +605,11 @@ layout = html.Div(
                     children=[
                         html.H2("Mean–Variance (Markowitz)", className="rb-subtitle"),
 
+                        html.Span(
+                            "i",
+                            className="rb-info",
+                            **{"data-tooltip": "Mean-Variance: hleda vahy ktere maximalizuji E[R] - lambda*risk. Vetsi lambda znamena opatrnejsi portfolio. Weight je podil aktiva. Long-only = bez short pozic."},
+                        ),
                         html.Label("Risk aversion (λ)", className="rb-label"),
                         dcc.Slider(
                             id="mv-lambda",
@@ -581,6 +647,16 @@ layout = html.Div(
 
                         html.Div(className="rb-divider"),
                         html.Div(id="mv-status", className="rb-status"),
+                        html.Div(
+                            className="rb-table-toolbar",
+                            children=[
+                                dcc.Clipboard(
+                                    id="mv-clip",
+                                    title="Kopirovat tabulku do schranky",
+                                    className="rb-copy-btn",
+                                )
+                            ],
+                        ),
 
                         dash_table.DataTable(
                             id="mv-table",
@@ -592,7 +668,9 @@ layout = html.Div(
                             data=[],
                             page_size=10,
                             sort_action="native",
-                            style_table={"width": "100%"},
+                            style_table={"width": "100%", "border": "1px solid rgba(255,255,255,0.25)"},
+                            style_header={"textAlign": "center"},
+                            style_cell={"textAlign": "center", "border": "1px solid rgba(255,255,255,0.12)"},
                         ),
                     ],
                 ),
@@ -603,6 +681,11 @@ layout = html.Div(
                     children=[
                         html.H2("Risk Parity (ERC)", className="rb-subtitle"),
 
+                        html.Span(
+                            "i",
+                            className="rb-info",
+                            **{"data-tooltip": "Risk Parity (ERC): nastavuje vahy tak, aby kazde aktivum podobne prispivalo k riziku. Leverage cap omezuje sumu abs vah. Risk contrib ukazuje prispevek aktiva k riziku."},
+                        ),
                         html.Label("Leverage cap (Σ|w|)", className="rb-label"),
                         dcc.Slider(
                             id="rp-gross-cap",
@@ -640,6 +723,16 @@ layout = html.Div(
 
                         html.Div(className="rb-divider"),
                         html.Div(id="rp-status", className="rb-status"),
+                        html.Div(
+                            className="rb-table-toolbar",
+                            children=[
+                                dcc.Clipboard(
+                                    id="rp-clip",
+                                    title="Kopirovat tabulku do schranky",
+                                    className="rb-copy-btn",
+                                )
+                            ],
+                        ),
 
                         dash_table.DataTable(
                             id="rp-table",
@@ -653,7 +746,9 @@ layout = html.Div(
                             data=[],
                             page_size=10,
                             sort_action="native",
-                            style_table={"width": "100%"},
+                            style_table={"width": "100%", "border": "1px solid rgba(255,255,255,0.25)"},
+                            style_header={"textAlign": "center"},
+                            style_cell={"textAlign": "center", "border": "1px solid rgba(255,255,255,0.12)"},
                         ),
                     ],
                 ),
@@ -663,6 +758,11 @@ layout = html.Div(
                     children=[
                         html.H2("CVaR / Expected Shortfall", className="rb-subtitle"),
 
+                        html.Span(
+                            "i",
+                            className="rb-info",
+                            **{"data-tooltip": "CVaR / Expected Shortfall: minimalizuje prumernou ztratu v nejhorsich scenarich. Alpha urcuje confidence level (napr. 0.95 = nejhorsich 5 procent). Weight je navrzena vaha."},
+                        ),
                         html.Label("Confidence level (α)", className="rb-label"),
                         dcc.Slider(
                             id="cvar-alpha",
@@ -700,6 +800,16 @@ layout = html.Div(
 
                         html.Div(className="rb-divider"),
                         html.Div(id="cvar-status", className="rb-status"),
+                        html.Div(
+                            className="rb-table-toolbar",
+                            children=[
+                                dcc.Clipboard(
+                                    id="cvar-clip",
+                                    title="Kopirovat tabulku do schranky",
+                                    className="rb-copy-btn",
+                                )
+                            ],
+                        ),
 
                         dash_table.DataTable(
                             id="cvar-table",
@@ -711,7 +821,9 @@ layout = html.Div(
                             data=[],
                             page_size=10,
                             sort_action="native",
-                            style_table={"width": "100%"},
+                            style_table={"width": "100%", "border": "1px solid rgba(255,255,255,0.25)"},
+                            style_header={"textAlign": "center"},
+                            style_cell={"textAlign": "center", "border": "1px solid rgba(255,255,255,0.12)"},
                         ),
                     ],
                 ),
