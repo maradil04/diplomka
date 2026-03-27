@@ -1,4 +1,4 @@
-from dash import register_page, html, dcc, dash_table, no_update
+﻿from dash import register_page, html, dcc, dash_table, no_update
 from dash import Input, Output, callback, State
 import pandas as pd
 import plotly.express as px
@@ -10,14 +10,20 @@ import io, base64
 from threading import Lock
 import dash
 
-register_page(__name__, path="/")
+from backend.services.import_service import import_transactions_dataframe, parse_upload_contents
+from backend.services.market_data_service import load_market_data
+from backend.services.portfolio_service import list_user_portfolios, load_portfolio_transactions_dataframe
+from backend.session import get_current_user
+
+register_page(__name__, path="/dashboard")
 #--------------- Načítání dat i s fallbackem (Později změnit na prázdný fallback!)
 df_fallback = pd.read_csv("portfolio.csv", sep=None, engine="python")
 df = df_fallback.copy()
 df_default = df.copy()
+df_empty = df_default.iloc[0:0].copy()
 tickers = set(df["Ticker"])
-df_prices = pd.read_csv("df_prices.csv")
-df_prices_all = pd.read_csv("df_prices.csv")
+df_prices = load_market_data().copy()
+df_prices_all = load_market_data().copy()
 df_prices["Ticker_clean"] = df_prices["Ticker"].str.split(".").str[0]
 df_prices_all = df_prices.copy()
 tickers_all = list(set(df_prices["Ticker_clean"]))
@@ -27,6 +33,20 @@ tickers_l = list(set(df_prices["Ticker_clean"]))
 tickers_l_default = tickers_l
 snp500 = df_prices.query("Ticker_clean == 'SXR8'")
 #---------------
+
+
+def _get_current_portfolio_df(active_portfolio_data):
+    user = get_current_user()
+    portfolio_id = (active_portfolio_data or {}).get("portfolio_id") if isinstance(active_portfolio_data, dict) else None
+    if user and portfolio_id:
+        loaded = load_portfolio_transactions_dataframe(user["id"], portfolio_id, fallback=df_empty)
+        return loaded.copy() if isinstance(loaded, pd.DataFrame) else df_empty.copy()
+    return df_default.copy()
+
+
+def _has_transaction_data(df):
+    required = {"Date", "Type"}
+    return isinstance(df, pd.DataFrame) and not df.empty and required.issubset(set(df.columns))
 
 
 
@@ -533,16 +553,14 @@ def _msg_figure(text="Vyber datum pro výpočet portfolia."):
 @callback(
     Output("vystup-div", "figure"),
     Input("vyber-datum", "date"),
-    Input('stored-data', 'data')
+    Input("active-portfolio-store", "data")
 )
-def spust_sjednoceni(vybrane_datum, stored_data):
+def spust_sjednoceni(vybrane_datum, active_portfolio_data):
     if vybrane_datum is None:
         return _msg_figure("Vyber datum pro výpočet portfolia.")
-    if stored_data is not None:
-        df = pd.DataFrame(stored_data)
-        
-    else:
-        df = df_default
+    df = _get_current_portfolio_df(active_portfolio_data)
+    if not _has_transaction_data(df):
+        return _msg_figure("Portfolio has no imported transactions yet.")
 
     try:
         
@@ -574,15 +592,14 @@ def spust_sjednoceni(vybrane_datum, stored_data):
 @callback(
     Output("vystup_fee_div", "figure"),
     Input("vyber-datum", "date"),
-    Input('stored-data', 'data')
+    Input("active-portfolio-store", "data")
 )
-def vypocitat_fees_divi(vybrane_datum, stored_data):
+def vypocitat_fees_divi(vybrane_datum, active_portfolio_data):
     if vybrane_datum is None:
         return _msg_figure("Vyber datum pro výpočet portfolia.")
-    if stored_data is not None:
-        df = pd.DataFrame(stored_data)
-    else:
-        df = df_default
+    df = _get_current_portfolio_df(active_portfolio_data)
+    if not _has_transaction_data(df):
+        return _msg_figure("Portfolio has no imported transactions yet.")
 
     try:
         target_date = pd.to_datetime(vybrane_datum).tz_localize("UTC")
@@ -613,15 +630,14 @@ def vypocitat_fees_divi(vybrane_datum, stored_data):
 @callback(
     Output("vystup_tabulka_portfolio", "children"),
     Input("vyber-datum", "date"),
-    Input('stored-data', 'data')
+    Input("active-portfolio-store", "data")
 )
-def vypocitat_hlavni_tabulku(vybrane_datum, stored_data):
+def vypocitat_hlavni_tabulku(vybrane_datum, active_portfolio_data):
     if vybrane_datum is None:
         return "Vyber datum pro výpočet portfolia."
-    if stored_data is not None:
-        df = pd.DataFrame(stored_data)
-    else:
-        df = df_default
+    df = _get_current_portfolio_df(active_portfolio_data)
+    if not _has_transaction_data(df):
+        return "Portfolio has no imported transactions yet."
     
 
     try:
@@ -681,15 +697,14 @@ def vypocitat_hlavni_tabulku(vybrane_datum, stored_data):
 @callback(
     Output("vystup_zaklad_tabulka", "children"),
     Input("vyber-datum", "date"),
-    Input('stored-data', 'data')
+    Input("active-portfolio-store", "data")
 )
-def vypocitat_celkovy_profit(vybrane_datum, stored_data):
+def vypocitat_celkovy_profit(vybrane_datum, active_portfolio_data):
     if vybrane_datum is None:
         return "Vyber datum pro výpočet portfolia."
-    if stored_data is not None:
-        df = pd.DataFrame(stored_data)
-    else:
-        df = df_default
+    df = _get_current_portfolio_df(active_portfolio_data)
+    if not _has_transaction_data(df):
+        return "Portfolio has no imported transactions yet."
 
     try:
         tickers = set(df["Ticker"])
@@ -767,13 +782,12 @@ def vypocitat_celkovy_profit(vybrane_datum, stored_data):
 @callback(
     Output("pano", "children"),
     Input("vyber-datum", "date"),
-    Input('stored-data', 'data')
+    Input("active-portfolio-store", "data")
 )
-def vypocitat_pano(vybrane_datum, stored_data):
-    if stored_data is not None:
-        df = pd.DataFrame(stored_data)
-    else:
-        df = df_default
+def vypocitat_pano(vybrane_datum, active_portfolio_data):
+    df = _get_current_portfolio_df(active_portfolio_data)
+    if not _has_transaction_data(df):
+        return "Portfolio has no imported transactions yet."
     tickers = set(df["Ticker"])
     prices = df_prices_all.query("Ticker_clean in @tickers")
     target_date = pd.to_datetime(vybrane_datum)
@@ -844,13 +858,12 @@ def vypocitat_pano(vybrane_datum, stored_data):
 @callback(
     Output("risk-heatmap", "figure"),
     Input("vyber-datum", "date"),
-    Input('stored-data', 'data')
+    Input("active-portfolio-store", "data")
 )
-def zobrazit_heatmapu(vybrane_datum, stored_data):
-    if stored_data is not None:
-        df = pd.DataFrame(stored_data)
-    else:
-        df = df_default
+def zobrazit_heatmapu(vybrane_datum, active_portfolio_data):
+    df = _get_current_portfolio_df(active_portfolio_data)
+    if not _has_transaction_data(df):
+        return _msg_figure("Portfolio has no imported transactions yet.")
     tickers = set(df["Ticker"])
     prices = df_prices_all.query("Ticker_clean in @tickers")
     target_date = pd.to_datetime(vybrane_datum)
@@ -927,15 +940,14 @@ def zobrazit_heatmapu(vybrane_datum, stored_data):
     Output("price-graph", "figure"),
     Input("ticker-dropdown", "value"),
     Input("vyber-start_date", "date"),
-    Input('stored-data', 'data')
+    Input("active-portfolio-store", "data")
 )
-def single_performance_graph(selected_tickers, selected_start_date, stored_data):
+def single_performance_graph(selected_tickers, selected_start_date, active_portfolio_data):
     if not selected_tickers:
         return _msg_figure("Nebyla vybrána žádná aktiva.")
-    if stored_data is not None:
-        df = pd.DataFrame(stored_data)
-    else:
-        df = df_default
+    df = _get_current_portfolio_df(active_portfolio_data)
+    if not _has_transaction_data(df):
+        return _msg_figure("Portfolio has no imported transactions yet.")
     tickers = set(df["Ticker"])
     prices = df_prices_all.query("Ticker_clean in @tickers")
     if selected_start_date is None:
@@ -986,9 +998,10 @@ def single_performance_graph(selected_tickers, selected_start_date, stored_data)
 @callback(
     Output("compare_graph", "figure"),
     Input("compare_tickers", "value"),
+    Input("stored-data", "data"),
     State("stored-data", "data")  # <- Store, kde máš nahrané portfolio (JSON)
 )
-def compare_graph(selected_bench, stored_data):
+def compare_graph(selected_bench, _stored_data_trigger, stored_data):
     try:
         if stored_data is not None:
             if isinstance(stored_data, str):
@@ -999,6 +1012,9 @@ def compare_graph(selected_bench, stored_data):
             df_local = df_default.copy()
     except Exception:
         df_local = df_default.copy()
+
+    if not _has_transaction_data(df_local):
+        return _msg_figure("Portfolio has no imported transactions yet.")
 
     tickers_clean = (
         df_local["Ticker"].astype(str).str.split(".").str[0].dropna().unique().tolist()
@@ -1064,15 +1080,14 @@ def compare_graph(selected_bench, stored_data):
     Output("portfolio_v_case", "children"),
     Input("frequency-dropdown", "value"),
     Input("vyber-datum", "date"),
-    Input('stored-data', 'data')
+    Input("active-portfolio-store", "data")
 )
-def graf_portfolio_v_case(freq, vybrane_datum, stored_data):
+def graf_portfolio_v_case(freq, vybrane_datum, active_portfolio_data):
     if vybrane_datum is None:
         return "Vyber datum pro výpočet portfolia."
-    if stored_data is not None:
-        df = pd.DataFrame(stored_data)
-    else:
-        df = df_default
+    df = _get_current_portfolio_df(active_portfolio_data)
+    if not _has_transaction_data(df):
+        return "Portfolio has no imported transactions yet."
 
     try:
         tickers = set(df["Ticker"])
@@ -1251,20 +1266,44 @@ def monthly_dividends_graph(stored_data, _selected_date):
     )
     return fig
 
-@callback(
-    Output('stored-data', 'data'),
-    Input('upload-data', 'contents'),
-    State('upload-data', 'filename')
-)
-def upload_and_store(contents, filename):
-    if contents is None:
-        return dash.no_update
 
-    content_type, content_string = contents.split(',')
-    decoded = base64.b64decode(content_string)
+@callback(
+    Output("stored-data", "data"),
+    Output("portfolio-list-store", "data", allow_duplicate=True),
+    Output("active-portfolio-store", "data", allow_duplicate=True),
+    Output("upload-status", "children"),
+    Input("upload-data", "contents"),
+    State("upload-data", "filename"),
+    State("active-portfolio-store", "data"),
+    prevent_initial_call=True,
+)
+def upload_and_store(contents, filename, active_portfolio_data):
+    if contents is None:
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update
+
+    user = get_current_user()
+    portfolio_id = (active_portfolio_data or {}).get("portfolio_id") if isinstance(active_portfolio_data, dict) else None
+    if not user or not portfolio_id:
+        return dash.no_update, dash.no_update, dash.no_update, "No active portfolio selected."
+
+    try:
+        df_uploaded = parse_upload_contents(contents)
+        import_transactions_dataframe(portfolio_id=portfolio_id, dataframe=df_uploaded, filename=filename)
+        portfolios = list_user_portfolios(user["id"])
+        return (
+            df_uploaded.to_dict("records"),
+            portfolios,
+            {"portfolio_id": portfolio_id},
+            f"Imported {len(df_uploaded)} rows into the selected portfolio.",
+        )
+    except Exception as exc:
+        return dash.no_update, dash.no_update, dash.no_update, f"Upload failed: {exc}"
+
+    user = get_current_user()
+    portfolio_id = (active_portfolio_data or {}).get("portfolio_id") if isinstance(active_portfolio_data, dict) else None
     df = pd.read_csv(io.StringIO(decoded.decode('utf-8')), sep=',') #!!!!!! Zatím funguje jenom na čárky ZMĚNIT!!!!!
     
-    return df.to_dict('records')
+    return dash.no_update, dash.no_update, dash.no_update, "Upload flow is being reconfigured."
  
 
 layout = html.Div(
@@ -1290,12 +1329,6 @@ layout = html.Div(
             ],
         ),
         #Hrubá oprava
-        html.Br(),
-        html.Br(),
-        html.Br(),
-        html.Br(),
-        html.Br(),
-
 
         # Nadpis
         html.Div(
@@ -1390,7 +1423,6 @@ layout = html.Div(
                                     className="row-container",
                                     children=[
                                         dcc.Graph(id="vystup-div", className="mini-graph"),
-                                        dcc.Graph(id="risk-heatmap", className="mini-graph"),
                                         dcc.Graph(id="vystup_fee_div", className="mini-graph"),
                                     ],
                                 )
@@ -1405,6 +1437,7 @@ layout = html.Div(
                         ),
                     ],
                 ),
+                html.Div(id="upload-status", style={"color": "white", "marginLeft": "12px"}),
             ],
         ),
     ],

@@ -1,4 +1,4 @@
-from dash import register_page, html, dcc, dash_table, no_update
+﻿from dash import register_page, html, dcc, dash_table, no_update
 from dash import Input, Output, callback, State
 import pandas as pd
 import plotly.express as px
@@ -25,6 +25,10 @@ from statsmodels.stats.diagnostic import het_arch, acorr_ljungbox
 from scipy.stats import shapiro
 from arch import arch_model
 
+from backend.services.market_data_service import load_market_data
+from backend.services.portfolio_service import load_portfolio_transactions_dataframe
+from backend.session import get_current_user
+
 import numpy as np
 import pandas as pd
 
@@ -41,11 +45,21 @@ dash.register_page(__name__, path="/predikce")
 df_fallback = pd.read_csv("portfolio.csv", sep=None, engine="python")
 df = df_fallback.copy()
 df_default = df.copy()
+df_empty = df_default.iloc[0:0].copy()
 tickers = set(df["Ticker"].dropna())
-df_prices = pd.read_csv("df_prices.csv")
-df_prices_all = pd.read_csv("df_prices.csv")
+df_prices = load_market_data().copy()
+df_prices_all = load_market_data().copy()
 df_prices["Ticker_clean"] = df_prices["Ticker"].str.split(".").str[0]
 df_prices_all = df_prices.copy()
+
+
+def _get_current_portfolio_df(active_portfolio_data):
+    user = get_current_user()
+    portfolio_id = (active_portfolio_data or {}).get("portfolio_id") if isinstance(active_portfolio_data, dict) else None
+    if user and portfolio_id:
+        loaded = load_portfolio_transactions_dataframe(user["id"], portfolio_id, fallback=df_empty)
+        return loaded.copy() if isinstance(loaded, pd.DataFrame) else df_empty.copy()
+    return df_default.copy()
 
 hodnotici_kriteria = ["RMSE","AIC","BIC"]
 
@@ -584,47 +598,31 @@ def sigma_to_price_bands(price_pred: pd.Series, sigma: pd.Series, k: float = 1.0
 @callback(
     Output("ticker_pred", "options"),
     Output("ticker_pred", "value"),
-    Input("stored-data", "data")
+    Input("active-portfolio-store", "data")
 )
-def update_ticker_dropdown(stored_data):
-    if stored_data is not None:
-        try:
-            df_uploaded = pd.DataFrame(stored_data)
-            if "Ticker" in df_uploaded.columns:
-                tickers_uploaded = sorted(
-                    set(df_uploaded["Ticker"].dropna())
-                )
-                tickers_uploaded = [t for t in tickers_uploaded if t != "null"]
-
-                if len(tickers_uploaded) > 0:
-                    return (
-                        [{"label": t, "value": t} for t in tickers_uploaded],
-                        None   # default
-                    )
-        except Exception:
-            pass
-    fallback = sorted([x for x in list(tickers) if x != "null"])
-
-    return (
-        [{"label": t, "value": t} for t in fallback],
-        None if fallback else None
-    )
+def update_ticker_dropdown(active_portfolio_data):
+    df_uploaded = _get_current_portfolio_df(active_portfolio_data)
+    if df_uploaded.empty or "Ticker" not in df_uploaded.columns:
+        return [], None
+    if "Ticker" in df_uploaded.columns:
+        tickers_uploaded = sorted(set(df_uploaded["Ticker"].dropna()))
+        tickers_uploaded = [t for t in tickers_uploaded if t != "null"]
+        if len(tickers_uploaded) > 0:
+            return (
+                [{"label": t, "value": t} for t in tickers_uploaded],
+                None
+            )
+    return [], None
 
 
 
 
 @callback(
     Output("portfolio-arima2", "children"),
-    Input("stored-data", "data"),
+    Input("active-portfolio-store", "data"),
 )
-def portfolio_mean_plus_volatility_forecast(stored_data):
-    if stored_data is not None:
-        try:
-            df_local = pd.DataFrame(stored_data)
-        except Exception:
-            df_local = df_default.copy()
-    else:
-        df_local = df_default.copy()
+def portfolio_mean_plus_volatility_forecast(active_portfolio_data):
+    df_local = _get_current_portfolio_df(active_portfolio_data)
 
     if df_local.empty or "Ticker" not in df_local.columns:
         return html.Div([html.H3("Predikce - Portfolio"), html.P("V uploadovanem souboru chybi data portfolia.")])
@@ -966,17 +964,7 @@ def mean_plus_volatility_forecast(ticker):
 
 
 layout = html.Div([
-    html.H1("", className = "prazdno"),
-    html.Br(),
-    html.Br(),
-    html.Br(),
-    html.Br(),
-    html.Br(),
-    html.Br(),
-    html.Br(),
-    html.Br(),
-    html.Br(),
-    html.Br(),
+
     html.H1("Predikce jednotlivých aktiv a portfolia", className = "nadpis_predikce"),
     html.Div(
         className="dropdown-graph-wrapper",

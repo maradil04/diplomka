@@ -3,30 +3,36 @@ import pandas as pd
 import numpy as np
 from scipy.optimize import minimize
 
+from backend.services.market_data_service import load_market_data
+from backend.services.portfolio_service import load_portfolio_transactions_dataframe
+from backend.session import get_current_user
+
 register_page(__name__, path="/rebalance")
 
 df_fallback = pd.read_csv("portfolio.csv", sep=None, engine="python")
 df = df_fallback.copy()
 df_default = df.copy()
+df_empty = df_default.iloc[0:0].copy()
 tickers = set(df["Ticker"].dropna())
-df_prices = pd.read_csv("df_prices.csv")
-df_prices_all = pd.read_csv("df_prices.csv")
+df_prices = load_market_data().copy()
+df_prices_all = load_market_data().copy()
 df_prices["Ticker_clean"] = df_prices["Ticker"].str.split(".").str[0]
 df_prices_all = df_prices.copy()
 
-def _portfolio_tickers_from_store(stored_data):
-    try:
-        if isinstance(stored_data, list):
-            df_local = pd.DataFrame(stored_data)
-        elif isinstance(stored_data, dict) and stored_data.get("records"):
-            df_local = pd.DataFrame(stored_data["records"])
-        else:
-            df_local = df_default.copy()
-        if "Ticker" in df_local.columns:
-            return set(df_local["Ticker"].dropna().astype(str))
-    except Exception:
-        pass
-    return set(df_default["Ticker"].dropna().astype(str))
+def _get_current_portfolio_df(active_portfolio_data):
+    user = get_current_user()
+    portfolio_id = (active_portfolio_data or {}).get("portfolio_id") if isinstance(active_portfolio_data, dict) else None
+    if user and portfolio_id:
+        loaded = load_portfolio_transactions_dataframe(user["id"], portfolio_id, fallback=df_empty)
+        return loaded.copy() if isinstance(loaded, pd.DataFrame) else df_empty.copy()
+    return df_default.copy()
+
+
+def _portfolio_tickers_from_active_portfolio(active_portfolio_data):
+    df_local = _get_current_portfolio_df(active_portfolio_data)
+    if "Ticker" not in df_local.columns:
+        return set()
+    return set(df_local["Ticker"].dropna().astype(str))
 
 def _table_to_tsv(rows, columns):
     if not rows:
@@ -299,22 +305,18 @@ def cvar_optimize(returns: np.ndarray, alpha: float = 0.95, long_only: bool = Tr
     Output("mv-table", "data"),
     Output("mv-status", "children"),
     Input("mv-run", "n_clicks"),
-    State("stored-data", "data"),
+    State("active-portfolio-store", "data"),
     State("mv-lambda", "value"),
     State("mv-longonly", "value"),
     prevent_initial_call=True
 )
-def run_rebalance(n_clicks, stored_data, lam, longonly_values):
+def run_rebalance(n_clicks, active_portfolio_data, lam, longonly_values):
     long_only = "LONG" in (longonly_values or [])
 
     # 1) Získej returns
     try:
-        if stored_data and isinstance(stored_data, dict) and stored_data.get("returns"):
-            rets = pd.read_json(stored_data["returns"], orient="split")
-            source = "stored-data['returns']"
-        else:
-            rets = prices_to_returns(df_prices_all)
-            source = "fallback df_prices.csv"
+        rets = prices_to_returns(df_prices_all)
+        source = "df_prices.csv filtered by active portfolio"
     except Exception as e:
         return [], html.Div(f"Nepodařilo se připravit returns: {e}", style={"color": "crimson"})
 
@@ -325,7 +327,9 @@ def run_rebalance(n_clicks, stored_data, lam, longonly_values):
 
     # 2) (Volitelné) omez na tickery z portfolia
     try:
-        portfolio_tickers = _portfolio_tickers_from_store(stored_data)
+        portfolio_tickers = _portfolio_tickers_from_active_portfolio(active_portfolio_data)
+        if len(portfolio_tickers) < 2:
+            return [], html.Div("The active portfolio needs at least 2 tickers for rebalance.", style={"color": "crimson"})
         common = [t for t in rets.columns if t in portfolio_tickers]
         if len(common) >= 2:
             rets = rets[common]
@@ -378,22 +382,18 @@ def run_rebalance(n_clicks, stored_data, lam, longonly_values):
     Output("rp-table", "data"),
     Output("rp-status", "children"),
     Input("rp-run", "n_clicks"),
-    State("stored-data", "data"),
+    State("active-portfolio-store", "data"),
     State("rp-longonly", "value"),
     State("rp-gross-cap", "value"),
     prevent_initial_call=True
 )
-def run_risk_parity(n_clicks, stored_data, longonly_values, gross_cap):
+def run_risk_parity(n_clicks, active_portfolio_data, longonly_values, gross_cap):
     long_only = "LONG" in (longonly_values or [])
 
     # returns
     try:
-        if stored_data and isinstance(stored_data, dict) and stored_data.get("returns"):
-            rets = pd.read_json(stored_data["returns"], orient="split")
-            source = "stored-data['returns']"
-        else:
-            rets = prices_to_returns(df_prices_all)
-            source = "fallback df_prices.csv"
+        rets = prices_to_returns(df_prices_all)
+        source = "df_prices.csv filtered by active portfolio"
     except Exception as e:
         return [], html.Div(f"Nepodařilo se připravit returns: {e}", style={"color": "crimson"})
 
@@ -405,7 +405,9 @@ def run_risk_parity(n_clicks, stored_data, longonly_values, gross_cap):
 
     # portfolio tickers only (volitelné)
     try:
-        portfolio_tickers = _portfolio_tickers_from_store(stored_data)
+        portfolio_tickers = _portfolio_tickers_from_active_portfolio(active_portfolio_data)
+        if len(portfolio_tickers) < 2:
+            return [], html.Div("The active portfolio needs at least 2 tickers for rebalance.", style={"color": "crimson"})
         common = [t for t in rets.columns if t in portfolio_tickers]
         if len(common) >= 2:
             rets = rets[common]
@@ -449,22 +451,18 @@ def run_risk_parity(n_clicks, stored_data, longonly_values, gross_cap):
     Output("cvar-table", "data"),
     Output("cvar-status", "children"),
     Input("cvar-run", "n_clicks"),
-    State("stored-data", "data"),
+    State("active-portfolio-store", "data"),
     State("cvar-alpha", "value"),
     State("cvar-longonly", "value"),
     prevent_initial_call=True
 )
-def run_cvar(n_clicks, stored_data, alpha, longonly_values):
+def run_cvar(n_clicks, active_portfolio_data, alpha, longonly_values):
     long_only = "LONG" in (longonly_values or [])
 
     # returns
     try:
-        if stored_data and isinstance(stored_data, dict) and stored_data.get("returns"):
-            rets = pd.read_json(stored_data["returns"], orient="split")
-            source = "stored-data['returns']"
-        else:
-            rets = prices_to_returns(df_prices_all)
-            source = "fallback df_prices.csv"
+        rets = prices_to_returns(df_prices_all)
+        source = "df_prices.csv filtered by active portfolio"
     except Exception as e:
         return [], html.Div(f"Nepodařilo se připravit returns: {e}", style={"color": "crimson"})
 
@@ -476,7 +474,9 @@ def run_cvar(n_clicks, stored_data, alpha, longonly_values):
 
     # omez na tickery v portfoliu (volitelné)
     try:
-        portfolio_tickers = _portfolio_tickers_from_store(stored_data)
+        portfolio_tickers = _portfolio_tickers_from_active_portfolio(active_portfolio_data)
+        if len(portfolio_tickers) < 2:
+            return [], html.Div("The active portfolio needs at least 2 tickers for rebalance.", style={"color": "crimson"})
         common = [t for t in rets.columns if t in portfolio_tickers]
         if len(common) >= 2:
             rets = rets[common]
@@ -594,8 +594,11 @@ def set_cvar_clipboard(rows):
 
 
 layout = html.Div(
+    
     className="rb-page",
     children=[
+        html.H1("Rebalance portfolia", className="nadpis_predikce"),
+
         html.Div(
             className="rb-grid",
             children=[
