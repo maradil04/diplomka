@@ -1,3 +1,5 @@
+from datetime import date
+
 from dash import dcc, html
 
 
@@ -22,8 +24,38 @@ def _sidebar_style(is_open):
     }
 
 
-def build_portfolio_sidebar(portfolio_options, active_portfolio_id, is_open):
-    has_portfolios = bool(portfolio_options)
+def _portfolio_rows(portfolios, active_portfolio_id):
+    if not portfolios:
+        return [html.Div("No portfolios yet.", className="portfolio-empty")]
+
+    rows = []
+    for item in portfolios:
+        portfolio_id = item["id"]
+        is_active = portfolio_id == active_portfolio_id
+        rows.append(
+            html.Div(
+                className=f"portfolio-row{' active' if is_active else ''}",
+                children=[
+                    html.Button(
+                        item["name"],
+                        id={"type": "portfolio-select", "index": portfolio_id},
+                        n_clicks=0,
+                        className="portfolio-row-select",
+                    ),
+                    html.Button(
+                        "🗑",
+                        id={"type": "portfolio-delete", "index": portfolio_id},
+                        n_clicks=0,
+                        className="portfolio-row-delete",
+                    ),
+                ],
+            )
+        )
+    return rows
+
+
+def build_portfolio_sidebar(portfolios, active_portfolio_id, is_open):
+    has_portfolios = bool(portfolios)
 
     return html.Div(
         id="portfolio-sidebar",
@@ -35,14 +67,32 @@ def build_portfolio_sidebar(portfolio_options, active_portfolio_id, is_open):
                 children=[
                     html.H3("Portfolios"),
                     html.P("Global portfolio context for dashboard, prediction, and rebalance."),
-                    dcc.Dropdown(
-                        id="portfolio-selector",
-                        options=portfolio_options,
-                        value=active_portfolio_id,
-                        placeholder="Select portfolio",
-                        disabled=not has_portfolios,
-                        className="portfolio-selector",
-                        style={"backgroundColor": "#0f0f0f", "color": "#00a17b"},
+                    html.Div(
+                        style={"marginTop": "16px"},
+                        children=[
+                            dcc.DatePickerSingle(
+                                id="vyber-datum",
+                                date=date.today(),
+                                display_format="DD.MM.YYYY",
+                                placeholder="Vyber datum",
+                                className="date-picker sidebar-date-picker",
+                                style={"background": "transparent", "width": "100%"},
+                            ),
+                        ],
+                    ),
+                    html.Div(
+                        style={"marginTop": "12px"},
+                        children=[
+                            dcc.Upload(
+                                id="upload-data",
+                                children=html.Button("Nahrat CSV", className="upload-button sidebar-upload-button", style={"width": "100%"}),
+                                multiple=False,
+                            )
+                        ],
+                    ),
+                    html.Div(
+                        id="upload-status",
+                        style={"marginTop": "10px", "fontSize": "14px", "opacity": "0.85"},
                     ),
                     html.Div(
                         style={"display": "flex", "gap": "8px", "marginTop": "16px"},
@@ -55,6 +105,12 @@ def build_portfolio_sidebar(portfolio_options, active_portfolio_id, is_open):
                             ),
                             html.Button("Create", id="portfolio-create-button", n_clicks=0),
                         ],
+                    ),
+                    html.Div(
+                        id="portfolio-list",
+                        className="portfolio-list",
+                        children=_portfolio_rows(portfolios, active_portfolio_id),
+                        style={"marginTop": "16px"},
                     ),
                     html.Div(
                         id="portfolio-sidebar-status",

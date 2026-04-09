@@ -1,19 +1,17 @@
-from dash import register_page, html, dcc, dash_table, Input, Output, State, callback
+from dash import register_page, html, dcc, dash_table, Input, Output, State, callback, no_update
 import pandas as pd
 import numpy as np
 from scipy.optimize import minimize
 
 from backend.services.market_data_service import load_market_data
-from backend.services.portfolio_service import load_portfolio_transactions_dataframe
+from backend.services.portfolio_service import empty_transactions_dataframe, load_portfolio_transactions_dataframe
+from backend.services.rebalance_portfolio_service import create_rebalance_portfolio
+from backend.services.portfolio_service import list_user_portfolios
 from backend.session import get_current_user
 
 register_page(__name__, path="/rebalance")
 
-df_fallback = pd.read_csv("portfolio.csv", sep=None, engine="python")
-df = df_fallback.copy()
-df_default = df.copy()
-df_empty = df_default.iloc[0:0].copy()
-tickers = set(df["Ticker"].dropna())
+df_empty = empty_transactions_dataframe()
 df_prices = load_market_data().copy()
 df_prices_all = load_market_data().copy()
 df_prices["Ticker_clean"] = df_prices["Ticker"].str.split(".").str[0]
@@ -25,7 +23,7 @@ def _get_current_portfolio_df(active_portfolio_data):
     if user and portfolio_id:
         loaded = load_portfolio_transactions_dataframe(user["id"], portfolio_id, fallback=df_empty)
         return loaded.copy() if isinstance(loaded, pd.DataFrame) else df_empty.copy()
-    return df_default.copy()
+    return df_empty.copy()
 
 
 def _portfolio_tickers_from_active_portfolio(active_portfolio_data):
@@ -544,6 +542,77 @@ def set_cvar_clipboard(rows):
     return _table_to_tsv(rows or [], cols)
 
 
+def _save_rebalance_result(active_portfolio_data, portfolio_name, rows, derived_from):
+    user = get_current_user()
+    if not user:
+        return no_update, no_update, no_update
+
+    source_portfolio_id = (active_portfolio_data or {}).get("portfolio_id") if isinstance(active_portfolio_data, dict) else None
+    if not source_portfolio_id:
+        return "Select a source portfolio first.", no_update, no_update
+
+    try:
+        portfolio, _simulated_df = create_rebalance_portfolio(
+            user_id=user["id"],
+            source_portfolio_id=source_portfolio_id,
+            portfolio_name=portfolio_name,
+            rebalance_rows=rows or [],
+            derived_from=derived_from,
+        )
+        portfolios = list_user_portfolios(user["id"])
+        return f"Saved portfolio: {portfolio['name']}", portfolios, ""
+    except Exception as exc:
+        return f"Save failed: {exc}", no_update, no_update
+
+
+@callback(
+    Output("mv-save-status", "children"),
+    Output("portfolio-list-store", "data", allow_duplicate=True),
+    Output("mv-save-name", "value"),
+    Input("mv-save-button", "n_clicks"),
+    State("active-portfolio-store", "data"),
+    State("mv-save-name", "value"),
+    State("mv-table", "data"),
+    prevent_initial_call=True,
+)
+def save_mv_portfolio(n_clicks, active_portfolio_data, portfolio_name, rows):
+    if not n_clicks:
+        return no_update, no_update, no_update
+    return _save_rebalance_result(active_portfolio_data, portfolio_name, rows, "rebalance_mv")
+
+
+@callback(
+    Output("rp-save-status", "children"),
+    Output("portfolio-list-store", "data", allow_duplicate=True),
+    Output("rp-save-name", "value"),
+    Input("rp-save-button", "n_clicks"),
+    State("active-portfolio-store", "data"),
+    State("rp-save-name", "value"),
+    State("rp-table", "data"),
+    prevent_initial_call=True,
+)
+def save_rp_portfolio(n_clicks, active_portfolio_data, portfolio_name, rows):
+    if not n_clicks:
+        return no_update, no_update, no_update
+    return _save_rebalance_result(active_portfolio_data, portfolio_name, rows, "rebalance_rp")
+
+
+@callback(
+    Output("cvar-save-status", "children"),
+    Output("portfolio-list-store", "data", allow_duplicate=True),
+    Output("cvar-save-name", "value"),
+    Input("cvar-save-button", "n_clicks"),
+    State("active-portfolio-store", "data"),
+    State("cvar-save-name", "value"),
+    State("cvar-table", "data"),
+    prevent_initial_call=True,
+)
+def save_cvar_portfolio(n_clicks, active_portfolio_data, portfolio_name, rows):
+    if not n_clicks:
+        return no_update, no_update, no_update
+    return _save_rebalance_result(active_portfolio_data, portfolio_name, rows, "rebalance_cvar")
+
+
 
 
 
@@ -653,6 +722,27 @@ layout = html.Div(
                         html.Div(
                             className="rb-table-toolbar",
                             children=[
+                                dcc.Input(
+                                    id="mv-save-name",
+                                    type="text",
+                                    placeholder="Portfolio name",
+                                    debounce=True,
+                                    style={
+                                        "background": "#111",
+                                        "color": "white",
+                                        "border": "1px solid rgba(255,255,255,0.18)",
+                                        "borderRadius": "8px",
+                                        "padding": "8px 10px",
+                                        "minWidth": "180px",
+                                    },
+                                ),
+                                html.Button(
+                                    "Save as portfolio",
+                                    id="mv-save-button",
+                                    n_clicks=0,
+                                    className="rb-btn rb-pill",
+                                    style={"whiteSpace": "nowrap", "width": "50%"},
+                                ),
                                 dcc.Clipboard(
                                     id="mv-clip",
                                     title="Kopirovat tabulku do schranky",
@@ -660,6 +750,7 @@ layout = html.Div(
                                 )
                             ],
                         ),
+                        html.Div(id="mv-save-status", className="rb-status"),
 
                         dash_table.DataTable(
                             id="mv-table",
@@ -729,6 +820,27 @@ layout = html.Div(
                         html.Div(
                             className="rb-table-toolbar",
                             children=[
+                                dcc.Input(
+                                    id="rp-save-name",
+                                    type="text",
+                                    placeholder="Portfolio name",
+                                    debounce=True,
+                                    style={
+                                        "background": "#111",
+                                        "color": "white",
+                                        "border": "1px solid rgba(255,255,255,0.18)",
+                                        "borderRadius": "8px",
+                                        "padding": "8px 10px",
+                                        "minWidth": "180px",
+                                    },
+                                ),
+                                html.Button(
+                                    "Save as portfolio",
+                                    id="rp-save-button",
+                                    n_clicks=0,
+                                    className="rb-btn rb-pill",
+                                    style={"whiteSpace": "nowrap", "width": "50%"},
+                                ),
                                 dcc.Clipboard(
                                     id="rp-clip",
                                     title="Kopirovat tabulku do schranky",
@@ -736,6 +848,7 @@ layout = html.Div(
                                 )
                             ],
                         ),
+                        html.Div(id="rp-save-status", className="rb-status"),
 
                         dash_table.DataTable(
                             id="rp-table",
@@ -806,6 +919,27 @@ layout = html.Div(
                         html.Div(
                             className="rb-table-toolbar",
                             children=[
+                                dcc.Input(
+                                    id="cvar-save-name",
+                                    type="text",
+                                    placeholder="Portfolio name",
+                                    debounce=True,
+                                    style={
+                                        "background": "#111",
+                                        "color": "white",
+                                        "border": "1px solid rgba(255,255,255,0.18)",
+                                        "borderRadius": "8px",
+                                        "padding": "8px 10px",
+                                        "minWidth": "180px",
+                                    },
+                                ),
+                                html.Button(
+                                    "Save as portfolio",
+                                    id="cvar-save-button",
+                                    n_clicks=0,
+                                    className="rb-btn rb-pill",
+                                    style={"whiteSpace": "nowrap", "width": "50%"},
+                                ),
                                 dcc.Clipboard(
                                     id="cvar-clip",
                                     title="Kopirovat tabulku do schranky",
@@ -813,6 +947,7 @@ layout = html.Div(
                                 )
                             ],
                         ),
+                        html.Div(id="cvar-save-status", className="rb-status"),
 
                         dash_table.DataTable(
                             id="cvar-table",

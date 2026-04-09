@@ -1,29 +1,33 @@
 import os
-import sqlite3
+from urllib.parse import urlparse
+
+import psycopg
+from flask import g
+from dotenv import load_dotenv
+from psycopg.rows import dict_row
 from pathlib import Path
 
-from flask import g
-
-from backend.models import SCHEMA_SQL
-
+from backend.models import POST_SCHEMA_MIGRATIONS, SCHEMA_STATEMENTS
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_DB_PATH = PROJECT_ROOT / "app.db"
+load_dotenv(PROJECT_ROOT / ".env")
+load_dotenv(PROJECT_ROOT / "backend" / ".env")
 
 
-def get_database_path() -> str:
-    return os.getenv("APP_DATABASE_PATH", str(DEFAULT_DB_PATH))
+def get_database_url() -> str:
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is not configured.")
+    return database_url
 
 
-def get_connection() -> sqlite3.Connection:
-    return sqlite3.connect(get_database_path())
+def get_connection():
+    return psycopg.connect(get_database_url(), row_factory=dict_row)
 
 
-def get_db() -> sqlite3.Connection:
+def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(get_database_path())
-        g.db.row_factory = sqlite3.Row
-        g.db.execute("PRAGMA foreign_keys = ON")
+        g.db = get_connection()
     return g.db
 
 
@@ -34,11 +38,18 @@ def close_db(_error=None) -> None:
 
 
 def init_db() -> None:
-    db_path = Path(get_database_path())
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
+    conn = get_connection()
     try:
-        conn.executescript(SCHEMA_SQL)
+        with conn.cursor() as cursor:
+            for statement in SCHEMA_STATEMENTS:
+                cursor.execute(statement)
+            for statement in POST_SCHEMA_MIGRATIONS:
+                cursor.execute(statement)
         conn.commit()
     finally:
         conn.close()
+
+
+def database_name_from_url() -> str:
+    parsed = urlparse(get_database_url())
+    return (parsed.path or "").lstrip("/")

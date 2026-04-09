@@ -1,8 +1,9 @@
-from dash import Input, Output, State, callback, dcc, html, no_update
+from dash import ALL, Input, Output, State, callback, ctx, dcc, html, no_update
 
 from app import app
 from backend.services.portfolio_service import (
     create_user_portfolio,
+    delete_user_portfolio,
     list_user_portfolios,
     load_portfolio_transactions_dataframe,
     resolve_active_portfolio,
@@ -22,7 +23,16 @@ app.layout = html.Div(
         dcc.Store(id="active-portfolio-store", storage_type="session"),
         dcc.Store(id="ui-store", storage_type="session", data={"portfolio_sidebar_open": False}),
         html.Div(id="route-guard-anchor", style={"display": "none"}),
-        html.Div(id="app-shell"),
+        html.Div(
+            id="app-shell",
+            children=build_app_shell(
+                pathname="/",
+                auth_data={},
+                portfolios=[],
+                active_portfolio_id=None,
+                ui_data={"portfolio_sidebar_open": False},
+            ),
+        ),
     ]
 )
 
@@ -119,21 +129,41 @@ def toggle_sidebar(n_clicks, ui_data):
 
 
 @callback(
+    Output("portfolio-list-store", "data", allow_duplicate=True),
     Output("active-portfolio-store", "data", allow_duplicate=True),
-    Input("portfolio-selector", "value"),
+    Output("portfolio-sidebar-status", "children", allow_duplicate=True),
+    Input({"type": "portfolio-select", "index": ALL}, "n_clicks"),
+    Input({"type": "portfolio-delete", "index": ALL}, "n_clicks"),
     State("auth-store", "data"),
     prevent_initial_call=True,
 )
-def persist_active_portfolio(portfolio_id, auth_data):
-    if not portfolio_id or not (auth_data or {}).get("authenticated"):
-        return no_update
+def handle_portfolio_actions(_select_clicks, _delete_clicks, auth_data):
+    if not (auth_data or {}).get("authenticated"):
+        return no_update, no_update, no_update
+
     user = get_current_user()
-    if not user:
-        return no_update
-    portfolio = set_active_portfolio(user["id"], portfolio_id)
-    if not portfolio:
-        return no_update
-    return {"portfolio_id": portfolio["id"]}
+    if not user or not ctx.triggered_id:
+        return no_update, no_update, no_update
+
+    triggered = ctx.triggered_id
+    portfolio_id = triggered.get("index") if isinstance(triggered, dict) else None
+    if not portfolio_id:
+        return no_update, no_update, no_update
+
+    if triggered.get("type") == "portfolio-select":
+        portfolio = set_active_portfolio(user["id"], portfolio_id)
+        if not portfolio:
+            return no_update, no_update, "Portfolio could not be selected."
+        portfolios = list_user_portfolios(user["id"])
+        return portfolios, {"portfolio_id": portfolio["id"]}, f"Active portfolio: {portfolio['name']}"
+
+    if triggered.get("type") == "portfolio-delete":
+        active, portfolios = delete_user_portfolio(user["id"], portfolio_id)
+        if not active:
+            return portfolios, {"portfolio_id": None}, "Portfolio deleted."
+        return portfolios, {"portfolio_id": active["id"]}, f"Portfolio deleted. Active portfolio: {active['name']}"
+
+    return no_update, no_update, no_update
 
 
 @callback(

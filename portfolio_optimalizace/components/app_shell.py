@@ -17,7 +17,6 @@ def _build_nav_links(authenticated):
 def build_app_shell(*, pathname, auth_data, portfolios, active_portfolio_id, ui_data):
     authenticated = bool(auth_data and auth_data.get("authenticated"))
     sidebar_open = bool((ui_data or {}).get("portfolio_sidebar_open"))
-    portfolio_options = [{"label": item["name"], "value": item["id"]} for item in portfolios]
 
     nav_children = _build_nav_links(authenticated)
     auth_controls = build_auth_controls(auth_data)
@@ -63,7 +62,7 @@ def build_app_shell(*, pathname, auth_data, portfolios, active_portfolio_id, ui_
         ],
     )
 
-    sidebar = build_portfolio_sidebar(portfolio_options, active_portfolio_id, sidebar_open)
+    sidebar = build_portfolio_sidebar(portfolios, active_portfolio_id, sidebar_open)
     sidebar_toggle = html.Button(
         id="sidebar-toggle",
         n_clicks=0,

@@ -26,8 +26,9 @@ from scipy.stats import shapiro
 from arch import arch_model
 
 from backend.services.market_data_service import load_market_data
-from backend.services.portfolio_service import load_portfolio_transactions_dataframe
+from backend.services.portfolio_service import empty_transactions_dataframe, load_portfolio_transactions_dataframe
 from backend.session import get_current_user
+from utils.portfolio_history import build_portfolio_value_history, portfolio_tickers
 
 import numpy as np
 import pandas as pd
@@ -42,15 +43,17 @@ from arch import arch_model
 
 dash.register_page(__name__, path="/predikce")
 
-df_fallback = pd.read_csv("portfolio.csv", sep=None, engine="python")
-df = df_fallback.copy()
-df_default = df.copy()
-df_empty = df_default.iloc[0:0].copy()
-tickers = set(df["Ticker"].dropna())
+df_empty = empty_transactions_dataframe()
 df_prices = load_market_data().copy()
 df_prices_all = load_market_data().copy()
 df_prices["Ticker_clean"] = df_prices["Ticker"].str.split(".").str[0]
 df_prices_all = df_prices.copy()
+
+HISTORY_COLOR = "#00a17b"
+PREDICTION_COLOR = "#f27a1a"
+VOLATILITY_COLOR = "#ffd37a"
+VOLATILITY_FILL_STRONG = "rgba(255, 211, 122, 0.20)"
+VOLATILITY_FILL_SOFT = "rgba(255, 211, 122, 0.10)"
 
 
 def _get_current_portfolio_df(active_portfolio_data):
@@ -59,7 +62,7 @@ def _get_current_portfolio_df(active_portfolio_data):
     if user and portfolio_id:
         loaded = load_portfolio_transactions_dataframe(user["id"], portfolio_id, fallback=df_empty)
         return loaded.copy() if isinstance(loaded, pd.DataFrame) else df_empty.copy()
-    return df_default.copy()
+    return df_empty.copy()
 
 hodnotici_kriteria = ["RMSE","AIC","BIC"]
 
@@ -71,60 +74,10 @@ ml_model_options = [
 ]
 
 def hodnota_portfolia_v_case(df, df_prices):
-    df = df.sort_values(by="Date")
-    df = df[df["Type"].isin(["BUY - MARKET", "SELL - MARKET"])]
-
-    df_copy = df.copy()
-    df_copy["Total_clean"] = (
-        df_copy["Total Amount"].astype(str)
-        .str.replace("€", "", regex=False)
-        .str.replace(",", "", regex=False)
-        .astype(float)
-    )
-    df_copy["Total_quant_clean"] = np.where(
-        df_copy["Type"] == "SELL - MARKET",
-        -df_copy["Quantity"],
-        df_copy["Quantity"]
-    )
-    df_copy["Total_clean"] = np.where(
-        df_copy["Type"] == "SELL - MARKET",
-        -df_copy["Total_clean"],
-        df_copy["Total_clean"]
-    )
-
-    df_copy["CumulativeShares"] = df_copy.groupby("Ticker")["Total_quant_clean"].cumsum()
-    df_copy = df_copy[["Date", "Ticker", "CumulativeShares"]]
-
-    df_copy["Date"] = pd.to_datetime(df_copy["Date"]).dt.tz_localize(None).dt.normalize()
-    df_prices["date"] = pd.to_datetime(df_prices["date"]).dt.tz_localize(None).dt.normalize()
-
-    min_date = df_copy["Date"].min()
-    df_prices = df_prices[df_prices["date"] >= min_date]
-
-    final = pd.merge(
-        df_prices,
-        df_copy,
-        left_on=["date", "Ticker_clean"],
-        right_on=["Date", "Ticker"],
-        how="left"
-    )
-
-    final = final.sort_values(by=["Ticker_clean", "date"])
-    final["CumulativeShares"] = final.groupby("Ticker_clean")["CumulativeShares"].ffill()
-
-    final["CumulativeShares"] = final["CumulativeShares"].fillna(0)
-
-    final["position_value"] = final["CumulativeShares"] * final["adjusted_close"]
-    final["portfolio_value"] = final.groupby("date")["position_value"].transform("sum")
-
-    pos_mask = final["portfolio_value"] > 0
-    if pos_mask.any():
-        first_valid_date = final.loc[pos_mask, "date"].min()
-        final = final[final["date"] >= first_valid_date]
-
-    final = final.reset_index(drop=True)
-
-    return final
+    history = build_portfolio_value_history(df, df_prices)
+    if history.empty:
+        return pd.DataFrame(columns=["date", "portfolio_value"])
+    return history
 
 def split_by_ticker(df, test_size=0.2):
     df = df.sort_values("date")
@@ -298,12 +251,10 @@ def grid_search_arima_rmse(
     results = []
     best_rmse = np.inf
     best_order = None
-    best_model = None
 
     # fallback best (bez whiteness)
     best_rmse_any = np.inf
     best_order_any = None
-    best_model_any = None
 
     train = pd.Series(train).dropna().astype(float)
     test = pd.Series(test).dropna().astype(float)
@@ -336,13 +287,11 @@ def grid_search_arima_rmse(
                     if np.isfinite(score) and score < best_rmse_any:
                         best_rmse_any = score
                         best_order_any = order
-                        best_model_any = model_fit
 
                     # best that passes whiteness
                     if np.isfinite(score) and score < best_rmse and is_white:
                         best_rmse = score
                         best_order = order
-                        best_model = model_fit
 
                 except Exception as e:
                     results.append({
@@ -359,9 +308,9 @@ def grid_search_arima_rmse(
 
     # fallback pokud nic neprošlo LB
     if best_order is None:
-        best_order, best_rmse, best_model = best_order_any, float(best_rmse_any), best_model_any
+        best_order, best_rmse = best_order_any, float(best_rmse_any)
 
-    return best_order, float(best_rmse), best_model, results_df
+    return best_order, float(best_rmse), None, results_df
 
 
 def grid_search_sarima_rmse(
@@ -379,7 +328,9 @@ def grid_search_sarima_rmse(
     best_rmse = np.inf
     best_order = None
     best_seasonal_order = None
-    best_model = None
+    best_rmse_any = np.inf
+    best_order_any = None
+    best_seasonal_order_any = None
 
     train = pd.Series(train).dropna().astype(float)
     test = pd.Series(test).dropna().astype(float)
@@ -411,11 +362,15 @@ def grid_search_sarima_rmse(
 
                                 results.append({"order": order, "seasonal_order": seasonal_order, "rmse": score, "ljung_box_pvalue": p_lb})
 
+                                if np.isfinite(score) and score < best_rmse_any:
+                                    best_rmse_any = score
+                                    best_order_any = order
+                                    best_seasonal_order_any = seasonal_order
+
                                 if np.isfinite(score) and score < best_rmse and is_white == True:
                                     best_rmse = score
                                     best_order = order
                                     best_seasonal_order = seasonal_order
-                                    best_model = model_fit
 
                             except Exception as e:
                                 results.append({"order": order, "seasonal_order": seasonal_order, "rmse": np.nan, "error": str(e)})
@@ -424,7 +379,12 @@ def grid_search_sarima_rmse(
     if "rmse" in results_df.columns:
         results_df = results_df.sort_values("rmse", na_position="last")
 
-    return best_order, best_seasonal_order, best_rmse, best_model, results_df
+    if best_order is None:
+        best_order = best_order_any
+        best_seasonal_order = best_seasonal_order_any
+        best_rmse = float(best_rmse_any)
+
+    return best_order, best_seasonal_order, best_rmse, None, results_df
 
 
 # =========================================================
@@ -454,7 +414,6 @@ def grid_search_garch_rmse(
     results = []
     best_score = np.inf
     best_order = None
-    best_model = None
 
     train = pd.Series(train).dropna().astype(float)
     test = pd.Series(test).dropna().astype(float)
@@ -470,29 +429,30 @@ def grid_search_garch_rmse(
     for p in p_range:
         for q in q_range:
             try:
-                am = arch_model(
-                    train_s,
-                    mean="Zero",     # mean už modeluje ARIMA/SARIMA
-                    vol="GARCH",
-                    p=p,
-                    q=q,
-                    dist=dist,
-                )
-                res = am.fit(disp="off")
+                sigma2_forecasts = []
+                history = train_s.copy()
+                for observation in test_s.values:
+                    am = arch_model(
+                        history,
+                        mean="Zero",
+                        vol="GARCH",
+                        p=p,
+                        q=q,
+                        dist=dist,
+                    )
+                    res = am.fit(disp="off")
+                    fcast = res.forecast(horizon=1, reindex=False)
+                    sigma2_next = float(fcast.variance.values[-1, 0])
+                    sigma2_forecasts.append(sigma2_next)
+                    history = pd.concat([history, pd.Series([observation])], ignore_index=True)
 
-                # 1-step ahead rolling forecast variance pro celý test horizon
-                fcast = res.forecast(horizon=len(test_s), reindex=False)
-                sigma2 = fcast.variance.values[-1, :]  # navazuje na train
-
-                # porovnáváme v tom samém měřítku (scaled)
-                score = rmse((test_s.values ** 2), sigma2)
+                score = rmse((test_s.values ** 2), np.asarray(sigma2_forecasts, dtype=float))
 
                 results.append({"p": p, "q": q, "rmse": score})
 
                 if np.isfinite(score) and score < best_score:
                     best_score = score
                     best_order = (p, q)
-                    best_model = res
 
             except Exception as e:
                 results.append({"p": p, "q": q, "rmse": np.nan, "error": str(e)})
@@ -501,7 +461,7 @@ def grid_search_garch_rmse(
     if "rmse" in results_df.columns:
         results_df = results_df.sort_values("rmse", na_position="last")
 
-    return best_order, best_score, best_model, results_df
+    return best_order, best_score, None, results_df
 
 
 from statsmodels.stats.diagnostic import het_arch
@@ -537,19 +497,21 @@ def pick_mean_model_rmse(log_ret: pd.Series):
     season_period = detect_seasonality_acf(log_ret, max_lag=252, threshold=0.2)
 
     if season_period is None:
-        best_order, best_score, best_model, _ = grid_search_arima_rmse(train, test)
+        best_order, best_score, _best_model, _ = grid_search_arima_rmse(train, test)
         if best_order is None:
             return None, None, np.nan, None
-        return best_model, f"ARIMA{best_order}", float(best_score), None
+        final_model = ARIMA(log_ret, order=best_order).fit()
+        return final_model, f"ARIMA{best_order}", float(best_score), None
 
     # SARIMA
-    best_order, best_seasonal_order, best_score, best_model, _ = grid_search_sarima_rmse(
+    best_order, best_seasonal_order, best_score, _best_model, _ = grid_search_sarima_rmse(
         train, test, s=season_period
     )
     if best_order is None or best_seasonal_order is None:
         return None, None, np.nan, season_period
 
-    return best_model, f"SARIMA{best_order}×{best_seasonal_order}", float(best_score), season_period
+    final_model = SARIMAX(log_ret, order=best_order, seasonal_order=best_seasonal_order).fit(disp=False)
+    return final_model, f"SARIMA{best_order}×{best_seasonal_order}", float(best_score), season_period
 
 
 def returns_to_price_path(last_price: float, future_log_ret: pd.Series) -> pd.Series:
@@ -570,20 +532,54 @@ def make_future_index(price_index: pd.DatetimeIndex, steps: int) -> pd.DatetimeI
     return pd.date_range(start=start, periods=steps, freq=inferred_freq)
 
 
-def sigma_to_price_bands(price_pred: pd.Series, sigma: pd.Series, k: float = 1.0):
+def sigma_to_price_bands(last_price: float, future_log_ret: pd.Series, sigma: pd.Series, k: float = 1.0):
     """
-    Přepočet volatility na cenové pásmo.
-    Pokud r_{t+h} ~ N(mu, sigma^2) (pro 1 krok),
-    pak pro cenu: P_{t+h} = P_t * exp(R_cum)
-    Jednoduché (a běžné) aproximace pro vizualizaci:
-      upper = P_pred * exp(+k*sigma)
-      lower = P_pred * exp(-k*sigma)
-    (sigma zde interpretujeme jako sigma pro return na daný krok.)
+    Přepočet 1-step volatility na korektnější více-krokové pásmo.
+    Pro horizont h používáme:
+      mean_cum_h = sum_{i=1..h} mu_i
+      var_cum_h  = sum_{i=1..h} sigma_i^2
+    a pak:
+      upper_h = P_t * exp(mean_cum_h + k * sqrt(var_cum_h))
+      lower_h = P_t * exp(mean_cum_h - k * sqrt(var_cum_h))
     """
-    sigma = sigma.reindex(price_pred.index)
-    upper = price_pred * np.exp(k * sigma)
-    lower = price_pred * np.exp(-k * sigma)
-    return lower, upper
+    sigma = sigma.reindex(future_log_ret.index).astype(float)
+    mu_cum = future_log_ret.astype(float).cumsum()
+    var_cum = sigma.pow(2).cumsum()
+    std_cum = np.sqrt(var_cum)
+    upper = float(last_price) * np.exp(mu_cum + k * std_cum)
+    lower = float(last_price) * np.exp(mu_cum - k * std_cum)
+    return lower.rename("lower_band"), upper.rename("upper_band")
+
+
+def forecast_sigma_series(residuals: pd.Series, future_index: pd.DatetimeIndex, forecast_steps: int):
+    sigma_future = pd.Series(np.full(forecast_steps, np.nan), index=future_index, name="sigma")
+    garch_label = "NO-GARCH"
+    garch_rmse = np.nan
+
+    has_arch, arch_p, arch_stat = detect_arch_effect(residuals, alpha=0.05, lags=12)
+    if not has_arch:
+        return sigma_future, garch_label, garch_rmse, arch_p, arch_stat
+
+    resid_series = pd.Series(residuals).dropna().astype(float)
+    train_r, test_r = train_test_split_series(resid_series, test_size=0.2)
+    best_pq, garch_rmse, _garch_model, _ = grid_search_garch_rmse(
+        train_r,
+        test_r,
+        p_range=range(1, 4),
+        q_range=range(1, 4),
+    )
+    if best_pq is None:
+        return sigma_future, garch_label, garch_rmse, arch_p, arch_stat
+
+    p_opt, q_opt = best_pq
+    garch_label = f"GARCH{best_pq}"
+    scaled_resid = resid_series * 100.0
+    am = arch_model(scaled_resid, mean="Zero", vol="GARCH", p=p_opt, q=q_opt, dist="normal")
+    res = am.fit(disp="off")
+    fcast = res.forecast(horizon=forecast_steps, reindex=False)
+    sigma2 = fcast.variance.values[-1, :]
+    sigma_future = pd.Series(np.sqrt(sigma2) / 100.0, index=future_index, name="sigma")
+    return sigma_future, garch_label, garch_rmse, arch_p, arch_stat
 
 
 #########################################################################################x#########################################################################################x
@@ -604,14 +600,12 @@ def update_ticker_dropdown(active_portfolio_data):
     df_uploaded = _get_current_portfolio_df(active_portfolio_data)
     if df_uploaded.empty or "Ticker" not in df_uploaded.columns:
         return [], None
-    if "Ticker" in df_uploaded.columns:
-        tickers_uploaded = sorted(set(df_uploaded["Ticker"].dropna()))
-        tickers_uploaded = [t for t in tickers_uploaded if t != "null"]
-        if len(tickers_uploaded) > 0:
-            return (
-                [{"label": t, "value": t} for t in tickers_uploaded],
-                None
-            )
+    tickers_uploaded = sorted(portfolio_tickers(df_uploaded))
+    if len(tickers_uploaded) > 0:
+        return (
+            [{"label": t, "value": t} for t in tickers_uploaded],
+            None
+        )
     return [], None
 
 
@@ -686,44 +680,25 @@ def portfolio_mean_plus_volatility_forecast(active_portfolio_data):
         else:
             resid = log_ret - log_ret.mean()
 
-    has_arch, arch_p, arch_stat = detect_arch_effect(resid, alpha=0.05, lags=12)
-    sigma_future = pd.Series(np.full(forecast_steps, np.nan), index=future_index, name="sigma")
-    garch_label = "NO-GARCH"
-    garch_rmse = np.nan
-
-    if has_arch:
-        resid_series = pd.Series(resid).dropna().astype(float)
-        train_r, test_r = train_test_split_series(resid_series, test_size=0.2)
-        best_pq, garch_rmse, garch_model, _ = grid_search_garch_rmse(
-            train_r, test_r,
-            p_range=range(1, 4),
-            q_range=range(1, 4),
-        )
-        if best_pq is not None:
-            p_opt, q_opt = best_pq
-            garch_label = f"GARCH{best_pq}"
-            am = arch_model(resid_series, mean="Zero", vol="GARCH", p=p_opt, q=q_opt, dist="normal")
-            res = am.fit(disp="off")
-            fcast = res.forecast(horizon=forecast_steps)
-            sigma2 = fcast.variance.values[-1, :]
-            sigma_future = pd.Series(np.sqrt(sigma2), index=future_index, name="sigma")
-
+    sigma_future, garch_label, garch_rmse, arch_p, arch_stat = forecast_sigma_series(
+        resid, future_index, forecast_steps
+    )
     last_price = float(price_series.iloc[-1])
     price_pred = returns_to_price_path(last_price, future_mean_lr)
     if sigma_future.isna().all():
         hist_sigma = float(log_ret.std(ddof=1))
         sigma_future = pd.Series(np.full(forecast_steps, hist_sigma), index=future_index, name="sigma")
 
-    lower1, upper1 = sigma_to_price_bands(price_pred, sigma_future, k=1.0)
-    lower2, upper2 = sigma_to_price_bands(price_pred, sigma_future, k=2.0)
+    lower1, upper1 = sigma_to_price_bands(last_price, future_mean_lr, sigma_future, k=1.0)
+    lower2, upper2 = sigma_to_price_bands(last_price, future_mean_lr, sigma_future, k=2.0)
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=price_series.index, y=price_series.values, mode="lines", name=f"{ticker} - historie", line=dict(width=2)))
-    fig.add_trace(go.Scatter(x=price_pred.index, y=price_pred.values, mode="lines", name=f"{ticker} - predikce (mean)", line=dict(width=2, dash="dot")))
-    fig.add_trace(go.Scatter(x=upper2.index, y=upper2.values, mode="lines", line=dict(width=0), name="+2sigma", showlegend=False))
-    fig.add_trace(go.Scatter(x=lower2.index, y=lower2.values, mode="lines", line=dict(width=0), name="-2sigma", fill="tonexty", fillcolor="rgba(255,255,255,0.08)", showlegend=True))
-    fig.add_trace(go.Scatter(x=upper1.index, y=upper1.values, mode="lines", line=dict(width=0), name="+1sigma", showlegend=False))
-    fig.add_trace(go.Scatter(x=lower1.index, y=lower1.values, mode="lines", line=dict(width=0), name="Volatilni pasmo +/-1sigma", fill="tonexty", fillcolor="rgba(0,255,136,0.12)", showlegend=True))
+    fig.add_trace(go.Scatter(x=price_series.index, y=price_series.values, mode="lines", name=f"{ticker} - historie", line=dict(width=2, color=HISTORY_COLOR)))
+    fig.add_trace(go.Scatter(x=price_pred.index, y=price_pred.values, mode="lines", name=f"{ticker} - predikce (mean)", line=dict(width=2, dash="dot", color=PREDICTION_COLOR)))
+    fig.add_trace(go.Scatter(x=upper2.index, y=upper2.values, mode="lines", line=dict(width=0, color=VOLATILITY_COLOR), name="+2sigma", showlegend=False))
+    fig.add_trace(go.Scatter(x=lower2.index, y=lower2.values, mode="lines", line=dict(width=0, color=VOLATILITY_COLOR), name="-2sigma", fill="tonexty", fillcolor=VOLATILITY_FILL_SOFT, showlegend=True))
+    fig.add_trace(go.Scatter(x=upper1.index, y=upper1.values, mode="lines", line=dict(width=0, color=VOLATILITY_COLOR), name="+1sigma", showlegend=False))
+    fig.add_trace(go.Scatter(x=lower1.index, y=lower1.values, mode="lines", line=dict(width=0, color=VOLATILITY_COLOR), name="Volatilni pasmo +/-1sigma", fill="tonexty", fillcolor=VOLATILITY_FILL_STRONG, showlegend=True))
 
     extra = f"{mean_label} (RMSE={mean_rmse:.4f})"
     extra += f" | ARCH p={arch_p:.4g} -> {garch_label}"
@@ -739,7 +714,7 @@ def portfolio_mean_plus_volatility_forecast(active_portfolio_data):
         margin=dict(t=50, b=40, l=40, r=40),
         title=dict(text=f"{ticker}: predikce ceny + volatilni pasmo | {extra}", y=1, x=0.5, xanchor="center", yanchor="top", font=dict(size=20, color="white", family="Arial")),
         xaxis=dict(title=dict(text="Datum", font=dict(size=16, color="white", family="Arial")), tickfont=dict(color="white", family="Arial"), showgrid=True, gridcolor="rgba(255,255,255,0.1)", gridwidth=1),
-        yaxis=dict(title=dict(text="Cena", font=dict(size=16, color="white", family="Arial")), tickfont=dict(color="white", family="Arial"), showgrid=True, gridcolor="rgba(255,255,255,0.1)", gridwidth=1),
+        yaxis=dict(title=dict(text="Cena", font=dict(size=16, color="white", family="Arial")), tickfont=dict(color="white", family="Arial"), showgrid=True, gridcolor="rgba(255,255,255,0.1)", gridwidth=1, rangemode="tozero"),
     )
 
     return html.Div([dcc.Graph(figure=fig)])
@@ -814,38 +789,9 @@ def mean_plus_volatility_forecast(ticker):
         else:
             resid = log_ret - log_ret.mean()
 
-    # --- 3) ARCH efekt? ---
-    has_arch, arch_p, arch_stat = detect_arch_effect(resid, alpha=0.05, lags=12)
-
-    # --- 4) Volatility model: pokud ARCH efekt, fit GARCH na reziduích (nebo na returnech) ---
-    sigma_future = pd.Series(np.full(forecast_steps, np.nan), index=future_index, name="sigma")
-
-    garch_label = "NO-GARCH"
-    garch_rmse = np.nan
-
-    if has_arch:
-        # grid search na reziduích (lepší než na raw returnech, když mean není nula)
-        # split stejně jako u log_ret (časově)
-        resid_series = pd.Series(resid).dropna().astype(float)
-        train_r, test_r = train_test_split_series(resid_series, test_size=0.2)
-
-        best_pq, garch_rmse, garch_model, _ = grid_search_garch_rmse(
-            train_r, test_r,
-            p_range=range(1, 4),
-            q_range=range(1, 4),
-        )
-
-        if best_pq is not None:
-            p_opt, q_opt = best_pq
-            garch_label = f"GARCH{best_pq}"
-
-            # finální fit na celé řadě reziduí
-            am = arch_model(resid_series, mean="Zero", vol="GARCH", p=p_opt, q=q_opt, dist="normal")
-            res = am.fit(disp="off")
-
-            fcast = res.forecast(horizon=forecast_steps)
-            sigma2 = fcast.variance.values[-1, :]
-            sigma_future = pd.Series(np.sqrt(sigma2), index=future_index, name="sigma")
+    sigma_future, garch_label, garch_rmse, arch_p, arch_stat = forecast_sigma_series(
+        resid, future_index, forecast_steps
+    )
 
     # --- 5) Mean returns -> price path ---
     last_price = float(price_series.iloc[-1])
@@ -857,8 +803,8 @@ def mean_plus_volatility_forecast(ticker):
         hist_sigma = float(log_ret.std(ddof=1))
         sigma_future = pd.Series(np.full(forecast_steps, hist_sigma), index=future_index, name="sigma")
 
-    lower1, upper1 = sigma_to_price_bands(price_pred, sigma_future, k=1.0)
-    lower2, upper2 = sigma_to_price_bands(price_pred, sigma_future, k=2.0)
+    lower1, upper1 = sigma_to_price_bands(last_price, future_mean_lr, sigma_future, k=1.0)
+    lower2, upper2 = sigma_to_price_bands(last_price, future_mean_lr, sigma_future, k=2.0)
 
     # --- 7) Jeden graf (cena + predikce + pásmo) ---
     fig = go.Figure()
@@ -869,7 +815,7 @@ def mean_plus_volatility_forecast(ticker):
         y=price_series.values,
         mode="lines",
         name=f"{ticker} – historie",
-        line=dict(width=2),
+        line=dict(width=2, color=HISTORY_COLOR),
     ))
 
     # predikce ceny
@@ -878,7 +824,7 @@ def mean_plus_volatility_forecast(ticker):
         y=price_pred.values,
         mode="lines",
         name=f"{ticker} – predikce (mean)",
-        line=dict(width=2, dash="dot"),
+        line=dict(width=2, dash="dot", color=PREDICTION_COLOR),
     ))
 
     # pásmo ±2σ (nejdřív)
@@ -886,7 +832,7 @@ def mean_plus_volatility_forecast(ticker):
         x=upper2.index,
         y=upper2.values,
         mode="lines",
-        line=dict(width=0),
+        line=dict(width=0, color=VOLATILITY_COLOR),
         name="+2σ",
         showlegend=False
     ))
@@ -894,10 +840,10 @@ def mean_plus_volatility_forecast(ticker):
         x=lower2.index,
         y=lower2.values,
         mode="lines",
-        line=dict(width=0),
+        line=dict(width=0, color=VOLATILITY_COLOR),
         name="-2σ",
         fill="tonexty",
-        fillcolor="rgba(255,255,255,0.08)",
+        fillcolor=VOLATILITY_FILL_SOFT,
         showlegend=True,
     ))
 
@@ -906,7 +852,7 @@ def mean_plus_volatility_forecast(ticker):
         x=upper1.index,
         y=upper1.values,
         mode="lines",
-        line=dict(width=0),
+        line=dict(width=0, color=VOLATILITY_COLOR),
         name="+1σ",
         showlegend=False
     ))
@@ -914,10 +860,10 @@ def mean_plus_volatility_forecast(ticker):
         x=lower1.index,
         y=lower1.values,
         mode="lines",
-        line=dict(width=0),
+        line=dict(width=0, color=VOLATILITY_COLOR),
         name="Volatilní pásmo ±1σ",
         fill="tonexty",
-        fillcolor="rgba(0,255,136,0.12)",
+        fillcolor=VOLATILITY_FILL_STRONG,
         showlegend=True,
     ))
 
@@ -947,7 +893,8 @@ def mean_plus_volatility_forecast(ticker):
         yaxis=dict(
             title=dict(text="Cena", font=dict(size=16, color="white", family="Arial")),
             tickfont=dict(color="white", family="Arial"),
-            showgrid=True, gridcolor="rgba(255,255,255,0.1)", gridwidth=1
+            showgrid=True, gridcolor="rgba(255,255,255,0.1)", gridwidth=1,
+            rangemode="tozero"
         ),
     )
 
