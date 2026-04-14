@@ -26,6 +26,13 @@ def _get_current_portfolio_df(active_portfolio_data):
     return df_empty.copy()
 
 
+def _get_portfolio_prices(active_portfolio_data):
+    tickers = _portfolio_tickers_from_active_portfolio(active_portfolio_data)
+    if tickers:
+        return load_market_data(tickers=tickers, use_cache=False).copy()
+    return load_market_data(use_cache=False).copy()
+
+
 def _portfolio_tickers_from_active_portfolio(active_portfolio_data):
     df_local = _get_current_portfolio_df(active_portfolio_data)
     if "Ticker" not in df_local.columns:
@@ -313,8 +320,9 @@ def run_rebalance(n_clicks, active_portfolio_data, lam, longonly_values):
 
     # 1) Získej returns
     try:
-        rets = prices_to_returns(df_prices_all)
-        source = "df_prices.csv filtered by active portfolio"
+        prices = _get_portfolio_prices(active_portfolio_data)
+        rets = prices_to_returns(prices)
+        source = "database-backed market prices for active portfolio"
     except Exception as e:
         return [], html.Div(f"Nepodařilo se připravit returns: {e}", style={"color": "crimson"})
 
@@ -390,8 +398,9 @@ def run_risk_parity(n_clicks, active_portfolio_data, longonly_values, gross_cap)
 
     # returns
     try:
-        rets = prices_to_returns(df_prices_all)
-        source = "df_prices.csv filtered by active portfolio"
+        prices = _get_portfolio_prices(active_portfolio_data)
+        rets = prices_to_returns(prices)
+        source = "database-backed market prices for active portfolio"
     except Exception as e:
         return [], html.Div(f"Nepodařilo se připravit returns: {e}", style={"color": "crimson"})
 
@@ -459,8 +468,9 @@ def run_cvar(n_clicks, active_portfolio_data, alpha, longonly_values):
 
     # returns
     try:
-        rets = prices_to_returns(df_prices_all)
-        source = "df_prices.csv filtered by active portfolio"
+        prices = _get_portfolio_prices(active_portfolio_data)
+        rets = prices_to_returns(prices)
+        source = "database-backed market prices for active portfolio"
     except Exception as e:
         return [], html.Div(f"Nepodařilo se připravit returns: {e}", style={"color": "crimson"})
 

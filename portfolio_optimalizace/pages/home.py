@@ -12,7 +12,10 @@ import dash
 
 from backend.services.import_service import import_transactions_dataframe, parse_upload_contents
 from backend.repositories.portfolios import get_portfolio_for_user
-from backend.services.market_data_service import load_market_data
+from backend.services.market_data_service import (
+    ensure_market_data_for_portfolio_dataframe,
+    load_market_data,
+)
 from backend.services.portfolio_service import (
     calculate_net_invested_capital,
     empty_transactions_dataframe,
@@ -43,6 +46,13 @@ def _get_current_portfolio_df(active_portfolio_data):
         loaded = load_portfolio_transactions_dataframe(user["id"], portfolio_id, fallback=df_empty)
         return loaded.copy() if isinstance(loaded, pd.DataFrame) else df_empty.copy()
     return df_empty.copy()
+
+
+def _get_portfolio_prices(dataframe=None):
+    tickers = portfolio_tickers(dataframe) if isinstance(dataframe, pd.DataFrame) else []
+    if tickers:
+        return load_market_data(tickers=tickers, use_cache=False).copy()
+    return load_market_data(use_cache=False).copy()
 
 
 def _has_transaction_data(df):
@@ -475,7 +485,7 @@ def twr_index_from_df(
 
 def _resolve_summary_metrics(target_date, df, active_portfolio_data):
     tickers = set(df["Ticker"])
-    prices = df_prices_all.query("Ticker_clean in @tickers")
+    prices = _get_portfolio_prices(df).query("Ticker_clean in @tickers")
     by_day = hodnota_portfolia_v_case_tabulka(target_date, df, prices)
 
     if by_day.empty:
@@ -815,7 +825,7 @@ def vypocitat_hlavni_tabulku(vybrane_datum, _stored_data, active_portfolio_data)
 
     try:
         tickers = set(df["Ticker"])
-        prices = df_prices_all.query("Ticker_clean in @tickers")
+        prices = _get_portfolio_prices(df).query("Ticker_clean in @tickers")
         target_date = _to_naive_ts(vybrane_datum)
         result_df    = sjednoceni(target_date, df)
         result_price = soucasna_cena(target_date, prices)
@@ -1001,7 +1011,7 @@ def vypocitat_asset_risk_summary(vybrane_datum, _stored_data, active_portfolio_d
     if not _has_transaction_data(df):
         return "Portfolio has no imported transactions yet."
     tickers = set(df["Ticker"])
-    prices = df_prices_all.query("Ticker_clean in @tickers")
+    prices = _get_portfolio_prices(df).query("Ticker_clean in @tickers")
     target_date = _force_naive_scalar(vybrane_datum)
     dfp = prices.sort_values(["Ticker_clean", "date"]).copy()
     dfp["date"] = _to_naive_day(dfp["date"])
@@ -1077,7 +1087,7 @@ def single_performance_graph(selected_tickers, selected_start_date, _stored_data
     if not _has_transaction_data(df):
         return _msg_figure("Portfolio has no imported transactions yet.")
     tickers = set(df["Ticker"])
-    prices = df_prices_all.query("Ticker_clean in @tickers")
+    prices = _get_portfolio_prices(df).query("Ticker_clean in @tickers")
     if selected_start_date is None:
         target_date = _to_naive_day(prices["date"]).max()
     else:
@@ -1151,7 +1161,8 @@ def compare_graph(selected_bench, _stored_data, active_portfolio_data):
         df_local["Ticker"].astype(str).str.split(".").str[0].dropna().unique().tolist()
         if not df_local.empty else []
     )
-    prices_filtered = df_prices_all[df_prices_all["Ticker_clean"].isin(tickers_clean)].copy()
+    prices_filtered = _get_portfolio_prices(df_local)
+    prices_filtered = prices_filtered[prices_filtered["Ticker_clean"].isin(tickers_clean)].copy()
 
     twr_df = twr_index_from_df(df_local, prices_filtered, base=100.0)
 
@@ -1163,8 +1174,10 @@ def compare_graph(selected_bench, _stored_data, active_portfolio_data):
             selected_bench = [selected_bench]
         bench_tickers = sorted(set(selected_bench).union(default_benchmarks))
 
+    benchmark_prices = load_market_data(tickers=bench_tickers, use_cache=False)
+
     bench = make_benchmark_series(
-        twr_df, df_prices_all, bench_tickers,
+        twr_df, benchmark_prices, bench_tickers,
         date_col="date", ticker_col="Ticker_clean",
         price_col="adjusted_close", base=100.0
     )
@@ -1225,7 +1238,7 @@ def graf_portfolio_v_case(freq, vybrane_datum, _stored_data, active_portfolio_da
 
     try:
         tickers = set(df["Ticker"])
-        prices = df_prices_all.query("Ticker_clean in @tickers")
+        prices = _get_portfolio_prices(df).query("Ticker_clean in @tickers")
         target_date = _force_naive_scalar(vybrane_datum)
         result_df = hodnota_portfolia_v_case(target_date, df, prices)
 
@@ -1419,12 +1432,26 @@ def upload_and_store(contents, filename, active_portfolio_data):
 
     try:
         df_uploaded = parse_upload_contents(contents)
-        import_transactions_dataframe(portfolio_id=portfolio_id, dataframe=df_uploaded, filename=filename)
+        market_data_summary = ensure_market_data_for_portfolio_dataframe(df_uploaded)
+        import_transactions_dataframe(
+            portfolio_id=portfolio_id,
+            dataframe=df_uploaded,
+            filename=filename,
+            market_data_summary=market_data_summary,
+        )
         portfolios = list_user_portfolios(user["id"])
+        status_parts = [f"Imported {len(df_uploaded)} rows into the selected portfolio."]
+        downloaded = market_data_summary.get("downloaded_tickers") or []
+        if downloaded:
+            status_parts.append(f"Downloaded market data for: {', '.join(downloaded)}.")
+        overlap_start = market_data_summary.get("overlap_start")
+        overlap_end = market_data_summary.get("overlap_end")
+        if overlap_start and overlap_end:
+            status_parts.append(f"Price overlap window: {overlap_start} to {overlap_end}.")
         return (
             portfolios,
             {"portfolio_id": portfolio_id},
-            f"Imported {len(df_uploaded)} rows into the selected portfolio.",
+            " ".join(status_parts),
         )
     except Exception as exc:
         return dash.no_update, dash.no_update, f"Upload failed: {exc}"

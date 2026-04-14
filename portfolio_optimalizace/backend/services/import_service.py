@@ -62,12 +62,19 @@ def parse_upload_contents(contents: str) -> pd.DataFrame:
     return parse_transactions_csv(text)
 
 
-def import_transactions_dataframe(*, portfolio_id, dataframe: pd.DataFrame, filename=None):
+def import_transactions_dataframe(*, portfolio_id, dataframe: pd.DataFrame, filename=None, market_data_summary=None):
     transaction_records = dataframe_to_transaction_records(dataframe)
     replace_portfolio_transactions(
         portfolio_id=portfolio_id,
         transaction_records=transaction_records,
         filename=filename,
     )
-    update_portfolio_metadata(portfolio_id=portfolio_id, source_filename=filename)
+    effective_start_date = None
+    if market_data_summary and market_data_summary.get("overlap_start") is not None:
+        effective_start_date = str(market_data_summary["overlap_start"])
+    update_portfolio_metadata(
+        portfolio_id=portfolio_id,
+        source_filename=filename,
+        effective_start_date=effective_start_date,
+    )
     return dataframe

@@ -64,6 +64,13 @@ def _get_current_portfolio_df(active_portfolio_data):
         return loaded.copy() if isinstance(loaded, pd.DataFrame) else df_empty.copy()
     return df_empty.copy()
 
+
+def _get_portfolio_prices(dataframe=None):
+    tickers = portfolio_tickers(dataframe) if isinstance(dataframe, pd.DataFrame) else []
+    if tickers:
+        return load_market_data(tickers=tickers, use_cache=False).copy()
+    return load_market_data(use_cache=False).copy()
+
 hodnotici_kriteria = ["RMSE","AIC","BIC"]
 
 ml_model_options = [
@@ -622,7 +629,8 @@ def portfolio_mean_plus_volatility_forecast(active_portfolio_data):
         return html.Div([html.H3("Predikce - Portfolio"), html.P("V uploadovanem souboru chybi data portfolia.")])
 
     tickers_clean = df_local["Ticker"].astype(str).str.split(".").str[0].dropna().unique().tolist()
-    prices_filtered = df_prices_all[df_prices_all["Ticker_clean"].isin(tickers_clean)].copy()
+    prices_filtered = _get_portfolio_prices(df_local)
+    prices_filtered = prices_filtered[prices_filtered["Ticker_clean"].isin(tickers_clean)].copy()
     if prices_filtered.empty:
         return html.Div([html.H3("Predikce - Portfolio"), html.P("Nenalezena cenova data pro tickery z portfolia.")])
 
@@ -734,7 +742,8 @@ def mean_plus_volatility_forecast(ticker):
     min_obs = 80  # na kombinaci mean + vol je lepší mít víc
 
     # --- data pro ticker ---
-    df_t = df_prices_all[df_prices_all["Ticker_clean"] == ticker].copy()
+    df_t = load_market_data(tickers=[ticker], use_cache=False).copy()
+    df_t = df_t[df_t["Ticker_clean"] == ticker].copy()
     if df_t.empty:
         return html.Div([html.P(f"Žádná data pro {ticker}.")])
 

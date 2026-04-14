@@ -115,7 +115,7 @@ def _clean_ticker(value):
 
 
 def _build_simulated_transactions(*, allocations, effective_start_date, initial_capital):
-    market_data = load_market_data().copy()
+    market_data = load_market_data(tickers=[allocation["ticker"] for allocation in allocations], use_cache=False).copy()
     market_data["date"] = pd.to_datetime(market_data["date"], errors="coerce")
     market_data["Ticker_clean"] = market_data["Ticker"].astype(str).str.split(".").str[0]
 
