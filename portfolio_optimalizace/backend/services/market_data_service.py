@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pandas as pd
 import psycopg
+import yfinance as yf
 from dotenv import load_dotenv
 
 from backend.repositories.market_prices import (
@@ -20,6 +21,7 @@ from backend.repositories.market_prices import (
     release_download_lock,
     upsert_market_price_rows,
 )
+from backend.repositories.ticker_mappings import get_ticker_mapping, upsert_ticker_mapping
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -34,40 +36,81 @@ DOWNLOAD_LOCK_WAIT_SECONDS = float(os.getenv("MARKET_DATA_DOWNLOAD_LOCK_WAIT_SEC
 DOWNLOAD_LOCK_POLL_SECONDS = float(os.getenv("MARKET_DATA_DOWNLOAD_LOCK_POLL_SECONDS", "0.5"))
 
 _MARKET_DATA_CACHE = {}
+_YAHOO_SUFFIX_TO_EODHD = {
+    "AS": "AS",
+    "DE": "XETRA",
+    "F": "FRA",
+    "HK": "HK",
+    "L": "LSE",
+    "MI": "MI",
+    "PA": "PA",
+    "PR": "PR",
+    "SW": "SW",
+    "T": "TSE",
+    "TO": "TO",
+    "V": "VI",
+}
+_YAHOO_EXCHANGE_TO_EODHD = {
+    "NASDAQ": "US",
+    "NYSE": "US",
+    "NYSEARCA": "US",
+    "NYSE AMERICAN": "US",
+    "OTC MARKETS": "US",
+    "SWISS": "SW",
+    "SIX": "SW",
+    "PARIS": "PA",
+    "EURONEXT PARIS": "PA",
+    "AMSTERDAM": "AS",
+    "EURONEXT AMSTERDAM": "AS",
+    "FRANKFURT": "FRA",
+    "XETRA": "XETRA",
+    "PRAGUE": "PR",
+    "PRAGUE STOCK EXCHANGE": "PR",
+    "TOKYO": "TSE",
+    "TOKYO STOCK EXCHANGE": "TSE",
+    "HONG KONG": "HK",
+    "LONDON": "LSE",
+    "MILAN": "MI",
+    "TORONTO": "TO",
+    "VIENNA": "VI",
+}
 
 
 def invalidate_market_data_cache():
     _MARKET_DATA_CACHE.clear()
 
 
-def normalize_portfolio_ticker(value):
+def normalize_input_ticker(value):
     ticker = str(value or "").strip().upper()
+    if not ticker:
+        return None
+    return ticker
+
+
+def normalize_portfolio_ticker(value):
+    ticker = normalize_input_ticker(value)
     if not ticker:
         return None
     return ticker.split(".", 1)[0]
 
 
 def provider_ticker_from_portfolio_ticker(value, default_exchange=DEFAULT_EXCHANGE):
-    ticker = normalize_portfolio_ticker(value)
-    if not ticker:
-        return None
-    if "." in str(value or "").strip():
-        return str(value).strip().upper()
-    return f"{ticker}.{default_exchange}"
+    resolved = resolve_provider_ticker(value, default_exchange=default_exchange)
+    return resolved["provider_ticker"] if resolved else None
 
 
 def extract_portfolio_tickers(dataframe: pd.DataFrame):
     if not isinstance(dataframe, pd.DataFrame) or "Ticker" not in dataframe.columns:
         return []
     tickers = {
-        normalize_portfolio_ticker(value)
+        normalize_input_ticker(value)
         for value in dataframe["Ticker"].dropna().tolist()
     }
     return sorted(ticker for ticker in tickers if ticker)
 
 
 def _cache_key(*, tickers=None, start_date=None, end_date=None):
-    normalized_tickers = tuple(sorted(str(ticker).upper() for ticker in (tickers or []) if ticker))
+    normalized_tickers = tuple(sorted(normalize_input_ticker(ticker) for ticker in (tickers or []) if normalize_input_ticker(ticker)))
     return normalized_tickers, str(start_date or ""), str(end_date or "")
 
 
@@ -135,11 +178,11 @@ def load_market_data(*, tickers=None, start_date=None, end_date=None, use_cache=
 
     provider_tickers = None
     if tickers:
-        provider_tickers = [
-            provider_ticker_from_portfolio_ticker(ticker)
-            for ticker in tickers
-            if provider_ticker_from_portfolio_ticker(ticker)
-        ]
+        provider_tickers = []
+        for ticker in tickers:
+            resolved = resolve_provider_ticker(ticker)
+            if resolved and resolved.get("provider_ticker"):
+                provider_tickers.append(resolved["provider_ticker"])
 
     try:
         rows = list_market_price_rows(tickers=provider_tickers, start_date=start_date, end_date=end_date)
@@ -169,6 +212,151 @@ def _get_api_token():
     if not token:
         raise RuntimeError("Missing EODHD_API_TOKEN for market data download.")
     return token
+
+
+def _mapping_payload(*, input_ticker, provider_ticker, exchange=None, currency=None, resolution_source="manual", confirmed=True):
+    return {
+        "input_ticker": input_ticker,
+        "provider_ticker": provider_ticker,
+        "exchange": exchange,
+        "currency": currency,
+        "resolution_source": resolution_source,
+        "confirmed": confirmed,
+    }
+
+
+def _cache_mapping(*, input_ticker, provider_ticker, exchange=None, currency=None, resolution_source="manual", confirmed=True, mirror_clean_ticker=False):
+    payload = _mapping_payload(
+        input_ticker=input_ticker,
+        provider_ticker=provider_ticker,
+        exchange=exchange,
+        currency=currency,
+        resolution_source=resolution_source,
+        confirmed=confirmed,
+    )
+    upsert_ticker_mapping(**payload)
+    if mirror_clean_ticker:
+        clean_ticker = normalize_portfolio_ticker(input_ticker)
+        if clean_ticker and clean_ticker != input_ticker and not get_ticker_mapping(clean_ticker):
+            upsert_ticker_mapping(
+                input_ticker=clean_ticker,
+                provider_ticker=provider_ticker,
+                exchange=exchange,
+                currency=currency,
+                resolution_source=resolution_source,
+                confirmed=confirmed,
+            )
+    return payload
+
+
+def _exchange_from_provider_ticker(provider_ticker):
+    return provider_ticker.split(".", 1)[1] if "." in provider_ticker else DEFAULT_EXCHANGE
+
+
+def _provider_ticker_from_yahoo_quote(quote):
+    symbol = str(quote.get("symbol") or "").upper().strip()
+    if not symbol:
+        return None
+
+    if "." in symbol:
+        base_symbol, yahoo_suffix = symbol.rsplit(".", 1)
+        mapped_suffix = _YAHOO_SUFFIX_TO_EODHD.get(yahoo_suffix.upper())
+        if mapped_suffix:
+            return f"{base_symbol}.{mapped_suffix}"
+
+    exchange_name = str(quote.get("exchDisp") or quote.get("exchangeDisp") or quote.get("exchange") or "").upper().strip()
+    mapped_exchange = _YAHOO_EXCHANGE_TO_EODHD.get(exchange_name)
+    if mapped_exchange:
+        return f"{symbol.split('.', 1)[0]}.{mapped_exchange}"
+
+    if quote.get("quoteType") in {"EQUITY", "ETF", "MUTUALFUND"}:
+        return f"{symbol.split('.', 1)[0]}.US"
+    return None
+
+
+def _resolve_provider_ticker_via_yfinance(input_ticker):
+    try:
+        search = yf.Search(input_ticker, max_results=8, news_count=0, lists_count=0, include_cb=False, raise_errors=False)
+    except Exception:
+        return None
+
+    quotes = getattr(search, "quotes", None) or []
+    if not quotes:
+        return None
+
+    clean_input = normalize_portfolio_ticker(input_ticker)
+    candidates = []
+    for quote in quotes:
+        quote_type = str(quote.get("quoteType") or "").upper()
+        if quote_type not in {"EQUITY", "ETF", "MUTUALFUND"}:
+            continue
+        provider_ticker = _provider_ticker_from_yahoo_quote(quote)
+        if not provider_ticker:
+            continue
+        symbol = str(quote.get("symbol") or "").upper()
+        score = 0
+        if symbol.split(".", 1)[0] == clean_input:
+            score += 10
+        if symbol == clean_input:
+            score += 3
+        if quote_type == "ETF":
+            score += 1
+        candidates.append((score, quote, provider_ticker))
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    _score, quote, provider_ticker = candidates[0]
+    return _mapping_payload(
+        input_ticker=normalize_input_ticker(input_ticker),
+        provider_ticker=provider_ticker,
+        exchange=_exchange_from_provider_ticker(provider_ticker),
+        currency=quote.get("currency"),
+        resolution_source="yfinance",
+        confirmed=False,
+    )
+
+
+def resolve_provider_ticker(value, default_exchange=DEFAULT_EXCHANGE):
+    input_ticker = normalize_input_ticker(value)
+    if not input_ticker:
+        return None
+
+    if "." in input_ticker:
+        provider_ticker = input_ticker
+        return _cache_mapping(
+            input_ticker=input_ticker,
+            provider_ticker=provider_ticker,
+            exchange=_exchange_from_provider_ticker(provider_ticker),
+            resolution_source="direct_input",
+            confirmed=True,
+            mirror_clean_ticker=True,
+        )
+
+    existing = get_ticker_mapping(input_ticker)
+    if existing:
+        return existing
+
+    fallback = _resolve_provider_ticker_via_yfinance(input_ticker)
+    if fallback:
+        return _cache_mapping(
+            input_ticker=input_ticker,
+            provider_ticker=fallback["provider_ticker"],
+            exchange=fallback.get("exchange"),
+            currency=fallback.get("currency"),
+            resolution_source="yfinance",
+            confirmed=False,
+        )
+
+    provider_ticker = f"{input_ticker}.{default_exchange}"
+    return _cache_mapping(
+        input_ticker=input_ticker,
+        provider_ticker=provider_ticker,
+        exchange=default_exchange,
+        resolution_source="default_exchange",
+        confirmed=False,
+    )
 
 
 def _is_ticker_stale(provider_ticker, coverage, stale_cutoff):
@@ -274,8 +462,8 @@ def _fetch_eodhd_rows(provider_ticker):
 
 
 def ensure_market_data_for_tickers(*, tickers, max_staleness_days=DEFAULT_STALENESS_DAYS):
-    clean_tickers = sorted({normalize_portfolio_ticker(ticker) for ticker in (tickers or []) if normalize_portfolio_ticker(ticker)})
-    if not clean_tickers:
+    input_tickers = sorted({normalize_input_ticker(ticker) for ticker in (tickers or []) if normalize_input_ticker(ticker)})
+    if not input_tickers:
         return {
             "requested_tickers": [],
             "provider_tickers": [],
@@ -285,11 +473,16 @@ def ensure_market_data_for_tickers(*, tickers, max_staleness_days=DEFAULT_STALEN
             "coverage": {},
         }
 
-    provider_map = {
-        ticker: provider_ticker_from_portfolio_ticker(ticker)
-        for ticker in clean_tickers
-    }
-    provider_tickers = [ticker for ticker in provider_map.values() if ticker]
+    resolved_mappings = {}
+    provider_tickers = []
+    for ticker in input_tickers:
+        resolved = resolve_provider_ticker(ticker)
+        if not resolved or not resolved.get("provider_ticker"):
+            continue
+        resolved_mappings[ticker] = resolved
+        provider_tickers.append(resolved["provider_ticker"])
+
+    provider_tickers = sorted(set(provider_tickers))
     coverage = market_price_coverage(tickers=provider_tickers)
 
     missing_provider_tickers = [ticker for ticker in provider_tickers if ticker not in coverage]
@@ -325,8 +518,9 @@ def ensure_market_data_for_tickers(*, tickers, max_staleness_days=DEFAULT_STALEN
     overlap_end = min(max_dates) if max_dates else None
 
     return {
-        "requested_tickers": clean_tickers,
+        "requested_tickers": input_tickers,
         "provider_tickers": provider_tickers,
+        "resolved_mappings": resolved_mappings,
         "downloaded_tickers": downloaded_tickers,
         "overlap_start": overlap_start,
         "overlap_end": overlap_end,

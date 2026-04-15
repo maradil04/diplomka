@@ -8,6 +8,7 @@ import pandas as pd
 
 from backend.repositories.portfolios import update_portfolio_metadata
 from backend.repositories.transactions import replace_portfolio_transactions
+from backend.services.currency_conversion_service import convert_amount_to_eur
 
 
 REQUIRED_IMPORT_COLUMNS = ["Date", "Type"]
@@ -45,12 +46,24 @@ def dataframe_to_transaction_records(dataframe: pd.DataFrame):
                 "ticker": cleaned.get("Ticker"),
                 "type": cleaned.get("Type") or "UNKNOWN",
                 "quantity": cleaned.get("Quantity"),
-                "total_amount": cleaned.get("Total Amount"),
+                "total_amount": _convert_total_amount_to_eur_string(cleaned),
+                "total_amount_original_curr": cleaned.get("Total Amount"),
                 "currency": cleaned.get("Currency"),
                 "raw_json": json.dumps(cleaned, ensure_ascii=True),
             }
         )
     return records
+
+
+def _convert_total_amount_to_eur_string(cleaned_row):
+    converted = convert_amount_to_eur(
+        cleaned_row.get("Total Amount"),
+        cleaned_row.get("Currency"),
+        cleaned_row.get("FX Rate"),
+    )
+    if converted is None:
+        return None
+    return f"{converted:.2f}"
 
 
 def parse_upload_contents(contents: str) -> pd.DataFrame:

@@ -30,8 +30,9 @@ def build_portfolio_value_history(dataframe: pd.DataFrame, price_dataframe: pd.D
     if prices.empty:
         return pd.DataFrame(columns=["date", "portfolio_value"])
 
+    aligned_prices = _build_aligned_price_panel(prices)
     merged_parts = []
-    for ticker, price_group in prices.groupby("Ticker_clean", sort=False):
+    for ticker, price_group in aligned_prices.groupby("Ticker_clean", sort=False):
         holdings = trades.loc[trades["Ticker"] == ticker, ["Date", "CumulativeShares"]].copy()
         if holdings.empty:
             continue
@@ -72,8 +73,9 @@ def build_position_history(dataframe: pd.DataFrame, price_dataframe: pd.DataFram
     if prices.empty:
         return pd.DataFrame()
 
+    aligned_prices = _build_aligned_price_panel(prices)
     merged_parts = []
-    for ticker, price_group in prices.groupby("Ticker_clean", sort=False):
+    for ticker, price_group in aligned_prices.groupby("Ticker_clean", sort=False):
         holdings = trades.loc[trades["Ticker"] == ticker, ["Date", "CumulativeShares"]].copy()
         if holdings.empty:
             continue
@@ -136,3 +138,30 @@ def _prepare_prices(price_dataframe: pd.DataFrame) -> pd.DataFrame:
     prices = prices.dropna(subset=["date", "Ticker_clean", "adjusted_close"])
     prices = prices.sort_values(["Ticker_clean", "date"]).drop_duplicates(subset=["Ticker_clean", "date"])
     return prices[["date", "Ticker_clean", "adjusted_close"]]
+
+
+def _build_aligned_price_panel(prices: pd.DataFrame) -> pd.DataFrame:
+    if not isinstance(prices, pd.DataFrame) or prices.empty:
+        return pd.DataFrame(columns=["date", "Ticker_clean", "adjusted_close"])
+
+    master_dates = pd.Index(sorted(prices["date"].dropna().unique()), name="date")
+    if master_dates.empty:
+        return pd.DataFrame(columns=["date", "Ticker_clean", "adjusted_close"])
+
+    aligned_parts = []
+    for ticker, price_group in prices.groupby("Ticker_clean", sort=False):
+        indexed = (
+            price_group[["date", "adjusted_close"]]
+            .drop_duplicates(subset=["date"])
+            .set_index("date")
+            .sort_index()
+        )
+        aligned = indexed.reindex(master_dates).ffill()
+        aligned = aligned.dropna(subset=["adjusted_close"]).reset_index()
+        aligned["Ticker_clean"] = ticker
+        aligned_parts.append(aligned[["date", "Ticker_clean", "adjusted_close"]])
+
+    if not aligned_parts:
+        return pd.DataFrame(columns=["date", "Ticker_clean", "adjusted_close"])
+
+    return pd.concat(aligned_parts, ignore_index=True).sort_values(["Ticker_clean", "date"]).reset_index(drop=True)

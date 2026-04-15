@@ -11,9 +11,9 @@ def replace_portfolio_transactions(*, portfolio_id, transaction_records, filenam
             cursor.executemany(
                 """
                 INSERT INTO portfolio_transactions (
-                    portfolio_id, date, ticker, type, quantity, total_amount, currency, raw_json
+                    portfolio_id, date, ticker, type, quantity, total_amount, total_amount_original_curr, currency, raw_json
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 [
                     (
@@ -23,6 +23,7 @@ def replace_portfolio_transactions(*, portfolio_id, transaction_records, filenam
                         record.get("type"),
                         record.get("quantity"),
                         record.get("total_amount"),
+                        record.get("total_amount_original_curr"),
                         record.get("currency"),
                         record.get("raw_json"),
                     )
@@ -43,7 +44,7 @@ def replace_portfolio_transactions(*, portfolio_id, transaction_records, filenam
 def list_portfolio_transactions(portfolio_id):
     rows = get_db().execute(
         """
-        SELECT id, portfolio_id, date, ticker, type, quantity, total_amount, currency, raw_json, created_at
+        SELECT id, portfolio_id, date, ticker, type, quantity, total_amount, total_amount_original_curr, currency, raw_json, created_at
         FROM portfolio_transactions
         WHERE portfolio_id = %s
         ORDER BY id ASC

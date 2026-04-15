@@ -276,8 +276,11 @@ def soucasna_cena(target_date, df_prices):
     target_date = _force_naive_scalar(target_date)
     df_copy = df_prices.copy()
     df_copy["date"] = _to_naive_day(df_copy["date"])
-    max_date = df_copy.loc[df_copy["date"] <= target_date, "date"].max()
-    df_copy = df_copy[df_copy["date"] == max_date]
+    df_copy = df_copy[df_copy["date"] <= target_date].copy()
+    if df_copy.empty:
+        return df_copy[["Ticker_clean", "adjusted_close"]]
+    latest_by_ticker = df_copy.groupby("Ticker_clean")["date"].transform("max")
+    df_copy = df_copy[df_copy["date"] == latest_by_ticker]
     return df_copy[["Ticker_clean", "adjusted_close"]]
 
 def celkove_fee_divi(target_date, data):
@@ -484,7 +487,7 @@ def twr_index_from_df(
 
 
 def _resolve_summary_metrics(target_date, df, active_portfolio_data):
-    tickers = set(df["Ticker"])
+    tickers = set(portfolio_tickers(df))
     prices = _get_portfolio_prices(df).query("Ticker_clean in @tickers")
     by_day = hodnota_portfolia_v_case_tabulka(target_date, df, prices)
 
@@ -824,7 +827,7 @@ def vypocitat_hlavni_tabulku(vybrane_datum, _stored_data, active_portfolio_data)
     
 
     try:
-        tickers = set(df["Ticker"])
+        tickers = set(portfolio_tickers(df))
         prices = _get_portfolio_prices(df).query("Ticker_clean in @tickers")
         target_date = _to_naive_ts(vybrane_datum)
         result_df    = sjednoceni(target_date, df)
@@ -835,9 +838,16 @@ def vypocitat_hlavni_tabulku(vybrane_datum, _stored_data, active_portfolio_data)
         result_df["Total_value"]     = result_df["Total_value"].round(2)
         result_df["Total_purch_val"] = result_df["Total_value"]
         result_df["Total_quantity"]  = result_df["Total_quantity"].round(2)
+        result_df["Ticker_clean"] = result_df["Ticker"].astype(str).str.split(".").str[0]
+        result_divi["Ticker_clean"] = result_divi["Ticker"].astype(str).str.split(".").str[0]
 
-        final_df = pd.merge(result_df, result_price, left_on="Ticker", right_on="Ticker_clean", how="left")
-        final_df = pd.merge(final_df, result_divi, on="Ticker", how="left")
+        final_df = pd.merge(result_df, result_price, on="Ticker_clean", how="left")
+        final_df = pd.merge(
+            final_df,
+            result_divi[["Ticker_clean", "Total_money"]],
+            on="Ticker_clean",
+            how="left",
+        )
         final_df["Total_curr_val"] = (final_df["Total_quantity"] * final_df["adjusted_close"]).round(2)
         final_df["Total_money"]    = final_df["Total_money"].fillna(0).round(2)
         final_df["Profit"]         = (final_df["Total_curr_val"] - final_df["Total_purch_val"] + final_df["Total_money"]).round(2)
@@ -1010,7 +1020,7 @@ def vypocitat_asset_risk_summary(vybrane_datum, _stored_data, active_portfolio_d
     df = _get_current_portfolio_df(active_portfolio_data)
     if not _has_transaction_data(df):
         return "Portfolio has no imported transactions yet."
-    tickers = set(df["Ticker"])
+    tickers = set(portfolio_tickers(df))
     prices = _get_portfolio_prices(df).query("Ticker_clean in @tickers")
     target_date = _force_naive_scalar(vybrane_datum)
     dfp = prices.sort_values(["Ticker_clean", "date"]).copy()
@@ -1086,7 +1096,7 @@ def single_performance_graph(selected_tickers, selected_start_date, _stored_data
     df = _get_current_portfolio_df(active_portfolio_data)
     if not _has_transaction_data(df):
         return _msg_figure("Portfolio has no imported transactions yet.")
-    tickers = set(df["Ticker"])
+    tickers = set(portfolio_tickers(df))
     prices = _get_portfolio_prices(df).query("Ticker_clean in @tickers")
     if selected_start_date is None:
         target_date = _to_naive_day(prices["date"]).max()
@@ -1237,7 +1247,7 @@ def graf_portfolio_v_case(freq, vybrane_datum, _stored_data, active_portfolio_da
         return "Portfolio has no imported transactions yet."
 
     try:
-        tickers = set(df["Ticker"])
+        tickers = set(portfolio_tickers(df))
         prices = _get_portfolio_prices(df).query("Ticker_clean in @tickers")
         target_date = _force_naive_scalar(vybrane_datum)
         result_df = hodnota_portfolia_v_case(target_date, df, prices)
@@ -1568,7 +1578,7 @@ layout = html.Div(
                         ),
                     ],
                 ),
-                html.Div(id="upload-status", style={"color": "white", "marginLeft": "12px"}),
+                html.Div(id="home-upload-status-note", style={"display": "none"}),
             ],
         ),
     ],

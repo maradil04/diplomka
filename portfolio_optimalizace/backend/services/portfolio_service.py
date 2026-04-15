@@ -21,6 +21,7 @@ TRANSACTION_COLUMNS = [
     "Quantity",
     "Price per share",
     "Total Amount",
+    "Total Amount Original Curr",
     "Currency",
     "FX Rate",
 ]
@@ -173,7 +174,11 @@ def load_portfolio_transactions_dataframe(user_id, portfolio_id, fallback=None):
         raw_json = row.get("raw_json")
         if raw_json:
             try:
-                parsed_rows.append(json.loads(raw_json))
+                payload = json.loads(raw_json)
+                payload["Total Amount"] = row.get("total_amount")
+                payload["Total Amount Original Curr"] = row.get("total_amount_original_curr", row.get("total_amount"))
+                payload["Currency"] = row.get("currency", payload.get("Currency"))
+                parsed_rows.append(payload)
                 continue
             except Exception:
                 pass
@@ -184,6 +189,7 @@ def load_portfolio_transactions_dataframe(user_id, portfolio_id, fallback=None):
                 "Type": row.get("type"),
                 "Quantity": row.get("quantity"),
                 "Total Amount": row.get("total_amount"),
+                "Total Amount Original Curr": row.get("total_amount_original_curr", row.get("total_amount")),
                 "Currency": row.get("currency"),
             }
         )
