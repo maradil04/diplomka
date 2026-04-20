@@ -60,6 +60,14 @@ def _has_transaction_data(df):
     return isinstance(df, pd.DataFrame) and not df.empty and required.issubset(set(df.columns))
 
 
+def _show_waiting_state(active_portfolio_data):
+    portfolio_id = (active_portfolio_data or {}).get("portfolio_id") if isinstance(active_portfolio_data, dict) else None
+    if not portfolio_id:
+        return False
+    df = _get_current_portfolio_df(active_portfolio_data)
+    return not _has_transaction_data(df)
+
+
 
 def _to_naive_ts(x):
     """Scalar → tz-naive pd.Timestamp normalizovaný na půlnoc."""
@@ -1441,6 +1449,34 @@ def monthly_dividends_graph(_stored_data, _selected_date, active_portfolio_data)
 
 
 @callback(
+    Output("dashboard-empty-overlay", "style"),
+    Input("url", "pathname"),
+    Input("active-portfolio-store", "data"),
+    Input("stored-data", "data"),
+)
+def toggle_home_empty_state(pathname, active_portfolio_data, _stored_data):
+    waiting = pathname == "/dashboard" and _show_waiting_state(active_portfolio_data)
+    if not waiting:
+        return {"display": "none"}
+    return {
+        "display": "flex",
+        "position": "fixed",
+        "top": "88px",
+        "left": "0",
+        "right": "0",
+        "bottom": "0",
+        "width": "100%",
+        "minHeight": "calc(100vh - 88px)",
+        "zIndex": "900",
+        "background": "linear-gradient(to bottom right, #0e0e0e, #0e0e0e, #0e0e0e, #0e0e0e, #0e0e0e, #0e0e0e, #0e0e0e, #0e0e0e, #00281f, #015140, #00a17b)",
+        "alignItems": "center",
+        "justifyContent": "center",
+        "padding": "24px",
+        "boxSizing": "border-box",
+    }
+
+
+@callback(
     Output("portfolio-list-store", "data", allow_duplicate=True),
     Output("active-portfolio-store", "data", allow_duplicate=True),
     Output("upload-status", "children"),
@@ -1488,117 +1524,121 @@ def upload_and_store(contents, filename, active_portfolio_data):
 layout = html.Div(
     className="home-page",
     children=[
-        # Nadpis
         html.Div(
-            className="hero",
             children=[
-                html.H1("Analýza portfolia", className="nadpis"),
-                html.P("Školní projekt - testovací verze", className="podnadpis"),
-            ],
-        ),
-
-        # Hlavní část
-        html.Div(
-            className="content",
-            children=[
+                # Nadpis
                 html.Div(
-                    className="left-col",
+                    className="hero",
                     children=[
-                        html.Div(id="vystup_zaklad_tabulka"),
-                        html.Div(id="portfolio-risk-summary"),
-
-                        html.Div(
-                            className="dropdown-graph-wrapper",
-                            children=[
-                                html.H2("Souhrnná tabulka portfolia"),
-                                html.Div(id="vystup_tabulka_portfolio"),
-                            ],
-                        ),
-
-                        html.Div(
-                            className="dropdown-graph-wrapper",
-                            children=[
-                                html.H2("Ukazatele rizika"),
-                                html.Div(id="asset-risk-summary", className="modern-table"),
-                            ],
-                        ),
-
-                        html.Div(
-                            className="dropdown-graph-wrapper",
-                            children=[
-                                html.H2("Vyber frekvenci dat:"),
-                                dcc.Dropdown(
-                                    ['Daily', 'Monthly'],
-                                    'Daily',
-                                    id='frequency-dropdown',
-                                    className="dropdown"
-                                ),
-                                html.Div(id="portfolio_v_case"),
-                            ],
-                        ),
-
-                        html.Div(
-                            className="dropdown-graph-wrapper",
-                            children=[
-                                html.H2("Vyber aktiva:"),
-                                dcc.Dropdown(
-                                    tickers_l,
-                                    tickers_l_default,
-                                    id='ticker-dropdown',
-                                    multi=True,
-                                    className="dropdown"
-                                ),
-
-                                html.H2("Vyber počáteční datum:"),
-                                dcc.DatePickerSingle(
-                                    id="vyber-start_date",
-                                    date=min(df_prices["date"]),
-                                    display_format="DD.MM.YYYY",
-                                    placeholder="Vyber datum",
-                                ),
-                                dcc.Graph(id="price-graph", className="graph"),
-                            ],
-                        ),
-
-                        html.Div(
-                            className="dropdown-graph-wrapper",
-                            children=[
-                                html.H2("Vyber aktiva na porovnání:"),
-                                dcc.Dropdown(
-                                    tickers_all, 
-                                    tickers_default,
-                                    id='compare_tickers',
-                                    multi=True,
-                                    className="dropdown"
-                                ),
-                                dcc.Graph(id="compare_graph", className="graph"),
-                            ],
-                        ),
-
-                        html.Div(
-                            className="dropdown-graph-wrapper",
-                            children=[
-                                html.Div(
-                                    className="row-container",
-                                    children=[
-                                        dcc.Graph(id="vystup-div", className="mini-graph"),
-                                        dcc.Graph(id="vystup_fee_div", className="mini-graph"),
-                                    ],
-                                )
-                            ],
-                        ),
-                        html.Div(
-                            className="dropdown-graph-wrapper",
-                            children=[
-                                html.H2("Dividendy po mesicich"),
-                                dcc.Graph(id="monthly-dividends-graph", className="graph"),
-                            ],
-                        ),
+                        html.H1("Analýza portfolia", className="nadpis"),
+                        html.P("Školní projekt - testovací verze", className="podnadpis"),
                     ],
                 ),
-                html.Div(id="home-upload-status-note", style={"display": "none"}),
+
+                # Hlavní část
+                html.Div(
+                    className="content",
+                    children=[
+                        html.Div(
+                            className="left-col",
+                            children=[
+                                html.Div(id="vystup_zaklad_tabulka"),
+                                html.Div(id="portfolio-risk-summary"),
+
+                                html.Div(
+                                    className="dropdown-graph-wrapper",
+                                    children=[
+                                        html.H2("Souhrnná tabulka portfolia"),
+                                        html.Div(id="vystup_tabulka_portfolio"),
+                                    ],
+                                ),
+
+                                html.Div(
+                                    className="dropdown-graph-wrapper",
+                                    children=[
+                                        html.H2("Ukazatele rizika"),
+                                        html.Div(id="asset-risk-summary", className="modern-table"),
+                                    ],
+                                ),
+
+                                html.Div(
+                                    className="dropdown-graph-wrapper",
+                                    children=[
+                                        html.H2("Vyber frekvenci dat:"),
+                                        dcc.Dropdown(
+                                            ['Daily', 'Monthly'],
+                                            'Daily',
+                                            id='frequency-dropdown',
+                                            className="dropdown"
+                                        ),
+                                        html.Div(id="portfolio_v_case"),
+                                    ],
+                                ),
+
+                                html.Div(
+                                    className="dropdown-graph-wrapper",
+                                    children=[
+                                        html.H2("Vyber aktiva:"),
+                                        dcc.Dropdown(
+                                            tickers_l,
+                                            tickers_l_default,
+                                            id='ticker-dropdown',
+                                            multi=True,
+                                            className="dropdown"
+                                        ),
+
+                                        html.H2("Vyber počáteční datum:"),
+                                        dcc.DatePickerSingle(
+                                            id="vyber-start_date",
+                                            date=min(df_prices["date"]),
+                                            display_format="DD.MM.YYYY",
+                                            placeholder="Vyber datum",
+                                        ),
+                                        dcc.Graph(id="price-graph", className="graph"),
+                                    ],
+                                ),
+
+                                html.Div(
+                                    className="dropdown-graph-wrapper",
+                                    children=[
+                                        html.H2("Vyber aktiva na porovnání:"),
+                                        dcc.Dropdown(
+                                            tickers_all,
+                                            tickers_default,
+                                            id='compare_tickers',
+                                            multi=True,
+                                            className="dropdown"
+                                        ),
+                                        dcc.Graph(id="compare_graph", className="graph"),
+                                    ],
+                                ),
+
+                                html.Div(
+                                    className="dropdown-graph-wrapper",
+                                    children=[
+                                        html.Div(
+                                            className="row-container",
+                                            children=[
+                                                dcc.Graph(id="vystup-div", className="mini-graph"),
+                                                dcc.Graph(id="vystup_fee_div", className="mini-graph"),
+                                            ],
+                                        )
+                                    ],
+                                ),
+                                html.Div(
+                                    className="dropdown-graph-wrapper",
+                                    children=[
+                                        html.H2("Dividendy po mesicich"),
+                                        dcc.Graph(id="monthly-dividends-graph", className="graph"),
+                                    ],
+                                ),
+                            ],
+                        ),
+                        html.Div(id="home-upload-status-note", style={"display": "none"}),
+                    ],
+                ),
             ],
-        ),
+        )
     ],
 )
 

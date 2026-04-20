@@ -36,6 +36,21 @@ body {
     margin-bottom: 20px;
 }
 
+.home-empty-state {
+    min-height: calc(100vh - 120px);
+    width: 100%;
+    align-items: center;
+    justify-content: center;
+}
+
+.home-empty-state-text {
+    color: #ffffff;
+    font-size: clamp(2.2rem, 5vw, 4.8rem);
+    font-weight: 800;
+    text-align: center;
+    letter-spacing: 0.08em;
+}
+
 .row-container {
     display: flex;
     flex-direction: row;

@@ -26,6 +26,14 @@ app.layout = html.Div(
         dcc.Store(id="ui-store", storage_type="session", data={"portfolio_sidebar_open": False, "menu_sidebar_open": False}),
         html.Div(id="route-guard-anchor", style={"display": "none"}),
         html.Div(
+            id="dashboard-empty-overlay",
+            className="home-empty-state",
+            style={"display": "none"},
+            children=[
+                html.Div("ČEKÁNÍ NA VLOŽENÍ PORTFOLIA", className="home-empty-state-text"),
+            ],
+        ),
+        html.Div(
             id="app-shell",
             children=build_app_shell(
                 pathname="/",
