@@ -1,6 +1,6 @@
 arch==7.2.0
 dash==2.18.2
-Flask==3.1.1
+Flask==3.0.3
 gunicorn==23.0.0
 matplotlib==3.9.2
 numpy==2.1.3
