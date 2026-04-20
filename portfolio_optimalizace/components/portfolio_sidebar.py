@@ -95,15 +95,15 @@ def build_portfolio_sidebar(portfolios, active_portfolio_id, is_open):
                         style={"marginTop": "10px", "fontSize": "14px", "opacity": "0.85"},
                     ),
                     html.Div(
-                        style={"display": "flex", "gap": "8px", "marginTop": "16px"},
+                        className="sidebar-create-row",
                         children=[
                             dcc.Input(
                                 id="portfolio-create-name",
                                 type="text",
-                                placeholder="New portfolio name",
-                                style={"flex": "1"},
+                                placeholder="Nazev portfolia",
+                                className="sidebar-create-input",
                             ),
-                            html.Button("Create", id="portfolio-create-button", n_clicks=0),
+                            html.Button("Create", id="portfolio-create-button", n_clicks=0, className="sidebar-create-button"),
                         ],
                     ),
                     html.Div(

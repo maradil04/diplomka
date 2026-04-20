@@ -213,15 +213,14 @@ def create_portfolio_from_sidebar(n_clicks, portfolio_name, auth_data):
     Input("auth-store", "data"),
     Input("portfolio-list-store", "data"),
     Input("active-portfolio-store", "data"),
-    Input("ui-store", "data"),
 )
-def render_shell(pathname, auth_data, portfolio_list, active_portfolio, ui_data):
+def render_shell(pathname, auth_data, portfolio_list, active_portfolio):
     return build_app_shell(
         pathname=pathname,
         auth_data=auth_data or {},
         portfolios=portfolio_list or [],
         active_portfolio_id=(active_portfolio or {}).get("portfolio_id"),
-        ui_data=ui_data or {"portfolio_sidebar_open": False, "menu_sidebar_open": False},
+        ui_data={"portfolio_sidebar_open": False, "menu_sidebar_open": False},
     )
 
 
@@ -258,6 +257,36 @@ def sync_sidebar_ui(ui_data, auth_data):
         "borderRadius": "10px",
     }
     return sidebar_style, ("‹" if sidebar_open else "›"), toggle_style
+
+
+@callback(
+    Output("mobile-menu-sidebar", "style"),
+    Input("ui-store", "data"),
+    Input("auth-store", "data"),
+    prevent_initial_call=False,
+)
+def sync_mobile_menu_ui(ui_data, auth_data):
+    authenticated = bool((auth_data or {}).get("authenticated"))
+    menu_open = bool((ui_data or {}).get("menu_sidebar_open"))
+    return {
+        "position": "fixed",
+        "top": "0",
+        "left": "0",
+        "height": "100vh",
+        "width": "300px",
+        "maxWidth": "85vw",
+        "overflowX": "hidden",
+        "background": "#111",
+        "color": "white",
+        "padding": "24px",
+        "borderRight": "1px solid rgba(255,255,255,0.15)",
+        "transition": "transform 0.22s ease, opacity 0.22s ease",
+        "transform": "translateX(0)" if (menu_open and authenticated) else "translateX(-100%)",
+        "opacity": "1" if (menu_open and authenticated) else "0.96",
+        "pointerEvents": "auto" if (menu_open and authenticated) else "none",
+        "zIndex": "1250",
+        "boxSizing": "border-box",
+    }
 
 
 if __name__ == "__main__":
