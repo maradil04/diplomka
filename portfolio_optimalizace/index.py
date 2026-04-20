@@ -13,6 +13,8 @@ from backend.session import get_current_user
 from components.app_shell import build_app_shell
 from components.portfolio_sidebar import _sidebar_style
 
+server = app.server
+
 
 app.layout = html.Div(
     [

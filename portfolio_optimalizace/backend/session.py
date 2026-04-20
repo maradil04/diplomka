@@ -11,9 +11,12 @@ PUBLIC_PREFIXES = ("/assets/", "/_dash-", "/favicon.ico", "/auth/")
 
 
 def configure_session(server):
+    is_production = os.getenv("APP_ENV", "").lower() == "production" or os.getenv("RENDER", "").lower() == "true"
     server.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "dev-secret-change-me")
     server.config["SESSION_COOKIE_HTTPONLY"] = True
     server.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    server.config["SESSION_COOKIE_SECURE"] = is_production
+    server.config["PREFERRED_URL_SCHEME"] = "https" if is_production else "http"
 
 
 def _canonical_redirect_base():
