@@ -54,6 +54,8 @@ PREDICTION_COLOR = "#f27a1a"
 VOLATILITY_COLOR = "#ffd37a"
 VOLATILITY_FILL_STRONG = "rgba(255, 211, 122, 0.20)"
 VOLATILITY_FILL_SOFT = "rgba(255, 211, 122, 0.10)"
+ENABLE_SARIMA = False
+GARCH_CANDIDATES = ((1, 1),)
 
 
 def _get_current_portfolio_df(active_portfolio_data):
@@ -433,27 +435,25 @@ def grid_search_garch_rmse(
     if len(train_s) < 50 or len(test_s) < 10:
         return None, np.nan, None, pd.DataFrame()
 
-    for p in p_range:
-        for q in q_range:
+    candidate_pairs = [(p, q) for p in p_range for q in q_range]
+    for p, q in candidate_pairs:
             try:
-                sigma2_forecasts = []
-                history = train_s.copy()
-                for observation in test_s.values:
-                    am = arch_model(
-                        history,
-                        mean="Zero",
-                        vol="GARCH",
-                        p=p,
-                        q=q,
-                        dist=dist,
-                    )
-                    res = am.fit(disp="off")
-                    fcast = res.forecast(horizon=1, reindex=False)
-                    sigma2_next = float(fcast.variance.values[-1, 0])
-                    sigma2_forecasts.append(sigma2_next)
-                    history = pd.concat([history, pd.Series([observation])], ignore_index=True)
+                am = arch_model(
+                    train_s,
+                    mean="Zero",
+                    vol="GARCH",
+                    p=p,
+                    q=q,
+                    dist=dist,
+                )
+                res = am.fit(disp="off")
+                horizon = len(test_s)
+                fcast = res.forecast(horizon=horizon, reindex=False)
+                sigma2_forecasts = np.asarray(fcast.variance.values[-1, :], dtype=float)
+                if sigma2_forecasts.size != horizon:
+                    sigma2_forecasts = np.resize(sigma2_forecasts, horizon)
 
-                score = rmse((test_s.values ** 2), np.asarray(sigma2_forecasts, dtype=float))
+                score = rmse((test_s.values ** 2), sigma2_forecasts)
 
                 results.append({"p": p, "q": q, "rmse": score})
 
@@ -501,24 +501,19 @@ def pick_mean_model_rmse(log_ret: pd.Series):
     """
     train, test = train_test_split_series(log_ret, test_size=0.2)
 
-    season_period = detect_seasonality_acf(log_ret, max_lag=252, threshold=0.2)
+    season_period = detect_seasonality_acf(log_ret, max_lag=252, threshold=0.2) if ENABLE_SARIMA else None
 
-    if season_period is None:
-        best_order, best_score, _best_model, _ = grid_search_arima_rmse(train, test)
-        if best_order is None:
-            return None, None, np.nan, None
-        final_model = ARIMA(log_ret, order=best_order).fit()
-        return final_model, f"ARIMA{best_order}", float(best_score), None
-
-    # SARIMA
-    best_order, best_seasonal_order, best_score, _best_model, _ = grid_search_sarima_rmse(
-        train, test, s=season_period
+    best_order, best_score, _best_model, _ = grid_search_arima_rmse(
+        train,
+        test,
+        p_range=range(0, 3),
+        q_range=range(0, 3),
     )
-    if best_order is None or best_seasonal_order is None:
+    if best_order is None:
         return None, None, np.nan, season_period
 
-    final_model = SARIMAX(log_ret, order=best_order, seasonal_order=best_seasonal_order).fit(disp=False)
-    return final_model, f"SARIMA{best_order}×{best_seasonal_order}", float(best_score), season_period
+    final_model = ARIMA(log_ret, order=best_order).fit()
+    return final_model, f"ARIMA{best_order}", float(best_score), season_period
 
 
 def returns_to_price_path(last_price: float, future_log_ret: pd.Series) -> pd.Series:
@@ -572,8 +567,8 @@ def forecast_sigma_series(residuals: pd.Series, future_index: pd.DatetimeIndex, 
     best_pq, garch_rmse, _garch_model, _ = grid_search_garch_rmse(
         train_r,
         test_r,
-        p_range=range(1, 4),
-        q_range=range(1, 4),
+        p_range=sorted({pair[0] for pair in GARCH_CANDIDATES}),
+        q_range=sorted({pair[1] for pair in GARCH_CANDIDATES}),
     )
     if best_pq is None:
         return sigma_future, garch_label, garch_rmse, arch_p, arch_stat
@@ -620,9 +615,14 @@ def update_ticker_dropdown(active_portfolio_data):
 
 @callback(
     Output("portfolio-arima2", "children"),
-    Input("active-portfolio-store", "data"),
+    Input("run-portfolio-prediction", "n_clicks"),
+    State("active-portfolio-store", "data"),
+    prevent_initial_call=True,
 )
-def portfolio_mean_plus_volatility_forecast(active_portfolio_data):
+def portfolio_mean_plus_volatility_forecast(n_clicks, active_portfolio_data):
+    if not n_clicks:
+        return no_update
+
     df_local = _get_current_portfolio_df(active_portfolio_data)
 
     if df_local.empty or "Ticker" not in df_local.columns:
@@ -715,7 +715,15 @@ def portfolio_mean_plus_volatility_forecast(active_portfolio_data):
 
     fig.update_layout(
         showlegend=True,
-        legend=dict(bgcolor="rgba(0,0,0,0.2)", font=dict(color="white")),
+        legend=dict(
+            orientation="h",
+            yanchor="top",
+            y=-0.18,
+            xanchor="center",
+            x=0.5,
+            bgcolor="rgba(0,0,0,0.2)",
+            font=dict(color="white"),
+        ),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="#303030",
         height=550,
@@ -884,7 +892,15 @@ def mean_plus_volatility_forecast(ticker):
 
     fig.update_layout(
         showlegend=True,
-        legend=dict(bgcolor="rgba(0,0,0,0.2)", font=dict(color="white")),
+        legend=dict(
+            orientation="h",
+            yanchor="top",
+            y=-0.18,
+            xanchor="center",
+            x=0.5,
+            bgcolor="rgba(0,0,0,0.2)",
+            font=dict(color="white"),
+        ),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="#303030",
         height=550,
@@ -926,11 +942,32 @@ layout = html.Div([
         className="dropdown-graph-wrapper",
         children=[
             html.H2("ARIMA predikce celeho portfolia:"),
+            html.Div(
+                style={"display": "flex", "justifyContent": "center", "marginBottom": "16px"},
+                children=[
+                    html.Button(
+                        "Spustit predikci portfolia",
+                        id="run-portfolio-prediction",
+                        n_clicks=0,
+                        className="rb-btn rb-pill",
+                        style={"width": "min(320px, 100%)"},
+                    )
+                ],
+            ),
             dcc.Loading(
                 id="loading-forecast-portfolio",
                 type="default",
                 color="#00a17b",
-                children=html.Div(id="portfolio-arima2", className="graph")
+                children=html.Div(
+                    id="portfolio-arima2",
+                    className="graph",
+                    children=html.Div(
+                        [
+                            html.H3("Predikce - Portfolio"),
+                            html.P("Kliknete na tlacitko pro spusteni predikce aktivniho portfolia."),
+                        ]
+                    ),
+                )
             ),
         ]
     ),

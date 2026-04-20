@@ -676,3 +676,130 @@ body {
     margin-top: 0.3rem;
     margin-left: -2.8rem;
 }
+
+@media (max-width: 900px) {
+    .shell-menu-toggle {
+        display: inline-flex !important;
+        align-items: center;
+        justify-content: center;
+        min-width: 92px;
+        height: 44px;
+        padding: 0 16px;
+        color: #00a17b;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 10px;
+        background: rgba(0, 0, 0, 0.35);
+        cursor: pointer;
+        font-size: 16px;
+        font-weight: 600;
+    }
+
+    .shell-nav,
+    #shell-auth-center {
+        display: none !important;
+    }
+
+    .mobile-menu-nav {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin-top: 12px;
+    }
+
+    .mobile-menu-nav .shell-nav-link {
+        min-width: 0;
+        width: 100%;
+        justify-content: flex-start;
+        padding: 0 16px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.04);
+    }
+
+    .mobile-menu-nav .shell-nav-link + .shell-nav-link {
+        margin-left: 0;
+    }
+
+    .mobile-menu-nav .shell-nav-link + .shell-nav-link::before {
+        display: none;
+    }
+
+    .mobile-menu-auth,
+    .mobile-menu-auth .auth-controls {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+    }
+
+    .mobile-menu-auth .google-top-btn,
+    .mobile-menu-auth .logout-button {
+        width: 100%;
+    }
+
+    .mobile-menu-auth .auth-user {
+        white-space: normal;
+        line-height: 1.4;
+    }
+}
+
+@media (min-width: 901px) {
+    .shell-menu-toggle,
+    .mobile-menu-sidebar {
+        display: none !important;
+    }
+}
+
+@media (max-width: 768px) {
+    body {
+        padding-left: 0.35rem;
+        padding-right: 0.35rem;
+    }
+
+    .nadpis {
+        font-size: 2.4rem;
+    }
+
+    .podnadpis {
+        font-size: 1.2rem;
+    }
+
+    .dropdown,
+    .sidebar-date-picker,
+    .sidebar-upload-button {
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+
+    .dropdown-graph-wrapper {
+        padding: 12px;
+    }
+
+    .row-container {
+        flex-direction: column;
+    }
+
+    .dash-table-container {
+        overflow-x: auto;
+    }
+
+    .dash-table-container .dash-spreadsheet-container,
+    .dash-table-container .dash-spreadsheet-inner {
+        min-width: 720px;
+    }
+
+    .landing-page {
+        min-height: auto;
+    }
+
+    .landing-word-primary {
+        font-size: clamp(5rem, 18vw, 7rem);
+        margin-left: 0;
+    }
+
+    .landing-word-second,
+    .landing-word-third,
+    .landing-word-outline {
+        font-size: clamp(4rem, 13vw, 5.5rem);
+        margin-left: 0;
+    }
+}

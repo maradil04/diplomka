@@ -17,6 +17,7 @@ def _build_nav_links(authenticated):
 def build_app_shell(*, pathname, auth_data, portfolios, active_portfolio_id, ui_data):
     authenticated = bool(auth_data and auth_data.get("authenticated"))
     sidebar_open = bool((ui_data or {}).get("portfolio_sidebar_open"))
+    menu_open = bool((ui_data or {}).get("menu_sidebar_open"))
 
     nav_children = _build_nav_links(authenticated)
     auth_controls = build_auth_controls(auth_data)
@@ -44,6 +45,12 @@ def build_app_shell(*, pathname, auth_data, portfolios, active_portfolio_id, ui_
             "zIndex": 1100,
         },
         children=[
+            html.Button(
+                id="menu-toggle",
+                n_clicks=0,
+                className="shell-menu-toggle",
+                children=[html.Span("Menu")],
+            ),
             html.Div(nav_children, className="shell-nav", style={"display": "flex", "alignItems": "center"}),
             html.Div(
                 auth_controls,
@@ -59,6 +66,46 @@ def build_app_shell(*, pathname, auth_data, portfolios, active_portfolio_id, ui_
                 },
             ),
             html.Div(style={"width": "140px"}),
+        ],
+    )
+
+    mobile_menu = html.Div(
+        id="mobile-menu-sidebar",
+        className="mobile-menu-sidebar",
+        style={
+            "position": "fixed",
+            "top": "0",
+            "left": "0",
+            "height": "100vh",
+            "width": "300px",
+            "maxWidth": "85vw",
+            "overflowX": "hidden",
+            "background": "#111",
+            "color": "white",
+            "padding": "24px",
+            "borderRight": "1px solid rgba(255,255,255,0.15)",
+            "transition": "transform 0.22s ease, opacity 0.22s ease",
+            "transform": "translateX(0)" if menu_open else "translateX(-100%)",
+            "opacity": "1" if menu_open else "0.96",
+            "pointerEvents": "auto" if menu_open else "none",
+            "zIndex": "1250",
+            "boxSizing": "border-box",
+        },
+        children=[
+            html.Div(
+                className="mobile-menu-content",
+                children=[
+                    html.Div(
+                        style={"display": "flex", "justifyContent": "space-between", "alignItems": "center", "marginBottom": "18px"},
+                        children=[
+                            html.H3("Menu", style={"margin": 0}),
+                            html.Button("Close", id="menu-close", n_clicks=0, className="portfolio-row-delete", style={"minWidth": "84px"}),
+                        ],
+                    ),
+                    html.Div(nav_children, className="mobile-menu-nav"),
+                    html.Div(auth_controls, className="mobile-menu-auth", style={"marginTop": "20px"}),
+                ],
+            )
         ],
     )
 
@@ -95,6 +142,7 @@ def build_app_shell(*, pathname, auth_data, portfolios, active_portfolio_id, ui_
     return html.Div(
         children=[
             header,
+            mobile_menu,
             sidebar_toggle,
             sidebar,
             html.Main(page_container, style=content_style),

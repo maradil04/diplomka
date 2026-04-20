@@ -23,7 +23,7 @@ app.layout = html.Div(
         dcc.Store(id="auth-store", storage_type="session"),
         dcc.Store(id="portfolio-list-store", storage_type="session"),
         dcc.Store(id="active-portfolio-store", storage_type="session"),
-        dcc.Store(id="ui-store", storage_type="session", data={"portfolio_sidebar_open": False}),
+        dcc.Store(id="ui-store", storage_type="session", data={"portfolio_sidebar_open": False, "menu_sidebar_open": False}),
         html.Div(id="route-guard-anchor", style={"display": "none"}),
         html.Div(
             id="app-shell",
@@ -32,7 +32,7 @@ app.layout = html.Div(
                 auth_data={},
                 portfolios=[],
                 active_portfolio_id=None,
-                ui_data={"portfolio_sidebar_open": False},
+                ui_data={"portfolio_sidebar_open": False, "menu_sidebar_open": False},
             ),
         ),
     ]
@@ -131,6 +131,21 @@ def toggle_sidebar(n_clicks, ui_data):
 
 
 @callback(
+    Output("ui-store", "data", allow_duplicate=True),
+    Input("menu-toggle", "n_clicks"),
+    Input("menu-close", "n_clicks"),
+    State("ui-store", "data"),
+    prevent_initial_call=True,
+)
+def toggle_menu_sidebar(menu_clicks, close_clicks, ui_data):
+    if not menu_clicks and not close_clicks:
+        return no_update
+    current = dict(ui_data or {})
+    current["menu_sidebar_open"] = not bool(current.get("menu_sidebar_open"))
+    return current
+
+
+@callback(
     Output("portfolio-list-store", "data", allow_duplicate=True),
     Output("active-portfolio-store", "data", allow_duplicate=True),
     Output("portfolio-sidebar-status", "children", allow_duplicate=True),
@@ -198,14 +213,15 @@ def create_portfolio_from_sidebar(n_clicks, portfolio_name, auth_data):
     Input("auth-store", "data"),
     Input("portfolio-list-store", "data"),
     Input("active-portfolio-store", "data"),
+    Input("ui-store", "data"),
 )
-def render_shell(pathname, auth_data, portfolio_list, active_portfolio):
+def render_shell(pathname, auth_data, portfolio_list, active_portfolio, ui_data):
     return build_app_shell(
         pathname=pathname,
         auth_data=auth_data or {},
         portfolios=portfolio_list or [],
         active_portfolio_id=(active_portfolio or {}).get("portfolio_id"),
-        ui_data={"portfolio_sidebar_open": False},
+        ui_data=ui_data or {"portfolio_sidebar_open": False, "menu_sidebar_open": False},
     )
 
 

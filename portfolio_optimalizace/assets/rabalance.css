@@ -445,3 +445,9 @@
     opacity: 1;
     transform: translateY(0);
 }
+
+@media (max-width: 980px) {
+    .rb-grid {
+        grid-template-columns: 1fr;
+    }
+}
