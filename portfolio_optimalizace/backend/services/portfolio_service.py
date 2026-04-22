@@ -105,17 +105,22 @@ def resolve_active_portfolio(user_id):
     if not portfolios:
         default_portfolio = ensure_default_portfolio(user_id)
         portfolios = [default_portfolio] if default_portfolio else []
+        if not portfolios:
+            return None
 
     remembered = session.get("active_portfolio_id")
     if remembered:
-        portfolio = get_portfolio_for_user(user_id, remembered)
-        if portfolio:
-            return portfolio
+        try:
+            remembered_int = int(remembered)
+        except (TypeError, ValueError):
+            remembered_int = None
 
-    latest = get_most_recent_portfolio_for_user(user_id)
-    if latest:
-        session["active_portfolio_id"] = latest["id"]
-    return latest
+        if remembered_int:
+            portfolio = get_portfolio_for_user(user_id, remembered_int)
+            if portfolio:
+                return portfolio
+
+    return portfolios[0] if portfolios else None
 
 
 def set_active_portfolio(user_id, portfolio_id):

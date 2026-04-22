@@ -1,5 +1,5 @@
 ﻿from dash import register_page, html, dcc, dash_table, no_update
-from dash import Input, Output, callback, State
+from dash import Input, Output, State, ctx
 import pandas as pd
 import plotly.express as px
 from datetime import date
@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 import io, base64
 from threading import Lock
 import dash
+app = dash.get_app()
 import sklearn
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
@@ -58,13 +59,26 @@ ENABLE_SARIMA = False
 GARCH_CANDIDATES = ((1, 1),)
 
 
+def _portfolio_id_from_state(active_portfolio_data):
+    if not isinstance(active_portfolio_data, dict):
+        return None
+    portfolio_id = active_portfolio_data.get("portfolio_id")
+    if portfolio_id in (None, ""):
+        return None
+    try:
+        return int(portfolio_id)
+    except (TypeError, ValueError):
+        return None
+
+
 def _get_current_portfolio_df(active_portfolio_data):
     user = get_current_user()
-    portfolio_id = (active_portfolio_data or {}).get("portfolio_id") if isinstance(active_portfolio_data, dict) else None
+    portfolio_id = _portfolio_id_from_state(active_portfolio_data)
     if user and portfolio_id:
         loaded = load_portfolio_transactions_dataframe(user["id"], portfolio_id, fallback=df_empty)
         return loaded.copy() if isinstance(loaded, pd.DataFrame) else df_empty.copy()
     return df_empty.copy()
+
 
 
 def _get_portfolio_prices(dataframe=None):
@@ -593,12 +607,15 @@ def forecast_sigma_series(residuals: pd.Series, future_index: pd.DatetimeIndex, 
 #########################################################################################x
 #########################################################################################x
 #########################################################################################x
-@callback(
+@app.callback(
     Output("ticker_pred", "options"),
     Output("ticker_pred", "value"),
-    Input("active-portfolio-store", "data")
+    Input("url", "pathname"),
+    Input("active-portfolio-store", "data"),
 )
-def update_ticker_dropdown(active_portfolio_data):
+def update_ticker_dropdown(pathname, active_portfolio_data):
+    if pathname != "/predikce":
+        return no_update, no_update
     df_uploaded = _get_current_portfolio_df(active_portfolio_data)
     if df_uploaded.empty or "Ticker" not in df_uploaded.columns:
         return [], None
@@ -611,16 +628,14 @@ def update_ticker_dropdown(active_portfolio_data):
     return [], None
 
 
-
-
-@callback(
+@app.callback(
     Output("portfolio-arima2", "children"),
     Input("run-portfolio-prediction", "n_clicks"),
-    State("active-portfolio-store", "data"),
+    Input("active-portfolio-store", "data"),
     prevent_initial_call=True,
 )
 def portfolio_mean_plus_volatility_forecast(n_clicks, active_portfolio_data):
-    if not n_clicks:
+    if ctx.triggered_id != "run-portfolio-prediction" or not n_clicks:
         return no_update
     try:
         df_local = _get_current_portfolio_df(active_portfolio_data)
@@ -736,7 +751,7 @@ def portfolio_mean_plus_volatility_forecast(n_clicks, active_portfolio_data):
             html.P(f"Predikce selhala: {e}"),
         ])
 ################################################x
-@callback(
+@app.callback(
     Output("arima2", "children"),
     Input("ticker_pred", "value"),
 )

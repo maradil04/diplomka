@@ -1,5 +1,5 @@
 ﻿from dash import register_page, html, dcc, dash_table, no_update
-from dash import Input, Output, callback, State
+from dash import Input, Output, State
 import pandas as pd
 import plotly.express as px
 from datetime import date
@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 import io, base64
 from threading import Lock
 import dash
+app = dash.get_app()
 
 from backend.services.import_service import import_transactions_dataframe, parse_upload_contents
 from backend.repositories.portfolios import get_portfolio_for_user
@@ -39,9 +40,21 @@ tickers_l_default = []
 #---------------
 
 
+def _portfolio_id_from_state(active_portfolio_data):
+    if not isinstance(active_portfolio_data, dict):
+        return None
+    portfolio_id = active_portfolio_data.get("portfolio_id")
+    if portfolio_id in (None, ""):
+        return None
+    try:
+        return int(portfolio_id)
+    except (TypeError, ValueError):
+        return None
+
+
 def _get_current_portfolio_df(active_portfolio_data):
     user = get_current_user()
-    portfolio_id = (active_portfolio_data or {}).get("portfolio_id") if isinstance(active_portfolio_data, dict) else None
+    portfolio_id = _portfolio_id_from_state(active_portfolio_data)
     if user and portfolio_id:
         loaded = load_portfolio_transactions_dataframe(user["id"], portfolio_id, fallback=df_empty)
         return loaded.copy() if isinstance(loaded, pd.DataFrame) else df_empty.copy()
@@ -61,11 +74,12 @@ def _has_transaction_data(df):
 
 
 def _show_waiting_state(active_portfolio_data):
-    portfolio_id = (active_portfolio_data or {}).get("portfolio_id") if isinstance(active_portfolio_data, dict) else None
+    portfolio_id = _portfolio_id_from_state(active_portfolio_data)
     if not portfolio_id:
         return False
     df = _get_current_portfolio_df(active_portfolio_data)
     return not _has_transaction_data(df)
+
 
 
 
@@ -661,13 +675,12 @@ def _no_data_figure(title=None):
 # ---------------------------------------------------------------------------
 # 1) Alokace aktiv v portfoliu
 # ---------------------------------------------------------------------------
-@callback(
+@app.callback(
     Output("vystup-div", "figure"),
     Input("vyber-datum", "date"),
-    Input("stored-data", "data"),
     State("active-portfolio-store", "data")
 )
-def spust_sjednoceni(vybrane_datum, _stored_data, active_portfolio_data):
+def spust_sjednoceni(vybrane_datum, active_portfolio_data):
     if vybrane_datum is None:
         return _msg_figure("Vyber datum pro výpočet portfolia.")
     df = _get_current_portfolio_df(active_portfolio_data)
@@ -738,13 +751,12 @@ def spust_sjednoceni(vybrane_datum, _stored_data, active_portfolio_data):
 # ---------------------------------------------------------------------------
 # 2) Pasivní příjmy a výdaje
 # ---------------------------------------------------------------------------
-@callback(
+@app.callback(
     Output("vystup_fee_div", "figure"),
     Input("vyber-datum", "date"),
-    Input("stored-data", "data"),
     State("active-portfolio-store", "data")
 )
-def vypocitat_fees_divi(vybrane_datum, _stored_data, active_portfolio_data):
+def vypocitat_fees_divi(vybrane_datum, active_portfolio_data):
     if vybrane_datum is None:
         return _msg_figure("Vyber datum pro výpočet portfolia.")
     df = _get_current_portfolio_df(active_portfolio_data)
@@ -820,13 +832,12 @@ def vypocitat_fees_divi(vybrane_datum, _stored_data, active_portfolio_data):
 # ---------------------------------------------------------------------------
 # 3) Souhrnná tabulka portfolia
 # ---------------------------------------------------------------------------
-@callback(
+@app.callback(
     Output("vystup_tabulka_portfolio", "children"),
     Input("vyber-datum", "date"),
-    Input("stored-data", "data"),
     State("active-portfolio-store", "data")
 )
-def vypocitat_hlavni_tabulku(vybrane_datum, _stored_data, active_portfolio_data):
+def vypocitat_hlavni_tabulku(vybrane_datum, active_portfolio_data):
     if vybrane_datum is None:
         return "Vyber datum pro výpočet portfolia."
     df = _get_current_portfolio_df(active_portfolio_data)
@@ -895,13 +906,12 @@ def vypocitat_hlavni_tabulku(vybrane_datum, _stored_data, active_portfolio_data)
 # ---------------------------------------------------------------------------
 # 4) Základní tabulka s metrikami (celková hodnota, ROI…)
 # ---------------------------------------------------------------------------
-@callback(
+@app.callback(
     Output("vystup_zaklad_tabulka", "children"),
     Input("vyber-datum", "date"),
-    Input("stored-data", "data"),
     State("active-portfolio-store", "data")
 )
-def vypocitat_celkovy_profit(vybrane_datum, _stored_data, active_portfolio_data):
+def vypocitat_celkovy_profit(vybrane_datum, active_portfolio_data):
     if vybrane_datum is None:
         return "Vyber datum pro výpočet portfolia."
     df = _get_current_portfolio_df(active_portfolio_data)
@@ -960,13 +970,12 @@ def vypocitat_celkovy_profit(vybrane_datum, _stored_data, active_portfolio_data)
 # ---------------------------------------------------------------------------
 # 5) Portfolio KPI block
 # ---------------------------------------------------------------------------
-@callback(
+@app.callback(
     Output("portfolio-risk-summary", "children"),
     Input("vyber-datum", "date"),
-    Input("stored-data", "data"),
     State("active-portfolio-store", "data")
 )
-def vypocitat_portfolio_risk_summary(vybrane_datum, _stored_data, active_portfolio_data):
+def vypocitat_portfolio_risk_summary(vybrane_datum, active_portfolio_data):
     if vybrane_datum is None:
         return "Vyber datum pro výpočet portfolia."
     df = _get_current_portfolio_df(active_portfolio_data)
@@ -1016,13 +1025,12 @@ def vypocitat_portfolio_risk_summary(vybrane_datum, _stored_data, active_portfol
 # ---------------------------------------------------------------------------
 # 6) Ukazatele rizika – tabulka
 # ---------------------------------------------------------------------------
-@callback(
+@app.callback(
     Output("asset-risk-summary", "children"),
     Input("vyber-datum", "date"),
-    Input("stored-data", "data"),
     State("active-portfolio-store", "data")
 )
-def vypocitat_asset_risk_summary(vybrane_datum, _stored_data, active_portfolio_data):
+def vypocitat_asset_risk_summary(vybrane_datum, active_portfolio_data):
     if vybrane_datum is None:
         return "Vyber datum pro výpočet portfolia."
     df = _get_current_portfolio_df(active_portfolio_data)
@@ -1091,14 +1099,13 @@ def vypocitat_asset_risk_summary(vybrane_datum, _stored_data, active_portfolio_d
 # ---------------------------------------------------------------------------
 # 7) Graf vývoje ceny vybraných aktiv
 # ---------------------------------------------------------------------------
-@callback(
+@app.callback(
     Output("price-graph", "figure"),
     Input("ticker-dropdown", "value"),
     Input("vyber-start_date", "date"),
-    Input("stored-data", "data"),
     State("active-portfolio-store", "data")
 )
-def single_performance_graph(selected_tickers, selected_start_date, _stored_data, active_portfolio_data):
+def single_performance_graph(selected_tickers, selected_start_date, active_portfolio_data):
     if not selected_tickers:
         return _msg_figure("Nebyla vybrána žádná aktiva.")
     df = _get_current_portfolio_df(active_portfolio_data)
@@ -1157,13 +1164,13 @@ def single_performance_graph(selected_tickers, selected_start_date, _stored_data
     return fig
 
 
-@callback(
+@app.callback(
     Output("ticker-dropdown", "options"),
     Output("ticker-dropdown", "value"),
-    Input("stored-data", "data"),
+    Input("vyber-datum", "date"),
     State("active-portfolio-store", "data"),
 )
-def update_home_ticker_dropdown(_stored_data, active_portfolio_data):
+def update_home_ticker_dropdown(_selected_date, active_portfolio_data):
     df_local = _get_current_portfolio_df(active_portfolio_data)
     tickers_local = sorted(portfolio_tickers(df_local))
     options = [{"label": ticker, "value": ticker} for ticker in tickers_local]
@@ -1172,13 +1179,12 @@ def update_home_ticker_dropdown(_stored_data, active_portfolio_data):
 # ---------------------------------------------------------------------------
 # 8) Porovnání s benchmarky
 # ---------------------------------------------------------------------------
-@callback(
+@app.callback(
     Output("compare_graph", "figure"),
     Input("compare_tickers", "value"),
-    Input("stored-data", "data"),
     State("active-portfolio-store", "data"),
 )
-def compare_graph(selected_bench, _stored_data, active_portfolio_data):
+def compare_graph(selected_bench, active_portfolio_data):
     df_local = _get_current_portfolio_df(active_portfolio_data)
 
     if not _has_transaction_data(df_local):
@@ -1258,14 +1264,13 @@ def compare_graph(selected_bench, _stored_data, active_portfolio_data):
 # ---------------------------------------------------------------------------
 # 9) Hodnota portfolia v čase (Daily/Monthly)
 # ---------------------------------------------------------------------------
-@callback(
+@app.callback(
     Output("portfolio_v_case", "children"),
     Input("frequency-dropdown", "value"),
     Input("vyber-datum", "date"),
-    Input("stored-data", "data"),
     State("active-portfolio-store", "data")
 )
-def graf_portfolio_v_case(freq, vybrane_datum, _stored_data, active_portfolio_data):
+def graf_portfolio_v_case(freq, vybrane_datum, active_portfolio_data):
     if vybrane_datum is None:
         return "Vyber datum pro výpočet portfolia."
     df = _get_current_portfolio_df(active_portfolio_data)
@@ -1341,14 +1346,12 @@ def graf_portfolio_v_case(freq, vybrane_datum, _stored_data, active_portfolio_da
 # ---------------------------------------------------------------------------
 # Callback na upload nových csv
 # ---------------------------------------------------------------------------
-@callback(
+@app.callback(
     Output("monthly-dividends-graph", "figure"),
-    Input("stored-data", "data"),
     Input("vyber-datum", "date"),
     State("active-portfolio-store", "data"),
-    prevent_initial_call=True,
 )
-def monthly_dividends_graph(_stored_data, _selected_date, active_portfolio_data):
+def monthly_dividends_graph(_selected_date, active_portfolio_data):
     def _placeholder(msg):
         fig = go.Figure()
         fig.add_annotation(
@@ -1448,13 +1451,12 @@ def monthly_dividends_graph(_stored_data, _selected_date, active_portfolio_data)
     return fig
 
 
-@callback(
+@app.callback(
     Output("dashboard-empty-overlay", "style"),
     Input("url", "pathname"),
     Input("active-portfolio-store", "data"),
-    Input("stored-data", "data"),
 )
-def toggle_home_empty_state(pathname, active_portfolio_data, _stored_data):
+def toggle_home_empty_state(pathname, active_portfolio_data):
     waiting = pathname == "/dashboard" and _show_waiting_state(active_portfolio_data)
     if not waiting:
         return {"display": "none"}
@@ -1476,7 +1478,7 @@ def toggle_home_empty_state(pathname, active_portfolio_data, _stored_data):
     }
 
 
-@callback(
+@app.callback(
     Output("portfolio-list-store", "data", allow_duplicate=True),
     Output("active-portfolio-store", "data", allow_duplicate=True),
     Output("upload-status", "children"),

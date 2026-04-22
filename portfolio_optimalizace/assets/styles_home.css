@@ -746,6 +746,10 @@ body {
 }
 
 @media (max-width: 900px) {
+    .shell-header {
+        padding: 0 14px !important;
+    }
+
     .shell-menu-toggle {
         display: inline-flex !important;
         align-items: center;
@@ -797,16 +801,43 @@ body {
         flex-direction: column;
         align-items: stretch;
         gap: 12px;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
     }
 
     .mobile-menu-auth .google-top-btn,
     .mobile-menu-auth .logout-button {
         width: 100%;
+        min-width: 0;
+        max-width: 100%;
+        box-sizing: border-box;
+        padding-left: 14px;
+        padding-right: 14px;
+        font-size: 15px;
     }
 
     .mobile-menu-auth .auth-user {
         white-space: normal;
         line-height: 1.4;
+        overflow-wrap: anywhere;
+        font-size: 14px;
+    }
+
+    .mobile-menu-auth .google-top-btn {
+        display: inline-flex;
+        justify-content: center;
+    }
+
+    .mobile-menu-sidebar {
+        z-index: 2000 !important;
+        width: min(320px, 88vw) !important;
+        padding: 20px 16px !important;
+    }
+
+    #portfolio-sidebar,
+    #sidebar-toggle {
+        display: none !important;
     }
 }
 

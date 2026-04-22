@@ -14,7 +14,7 @@ def _build_nav_links(authenticated):
     ]
 
 
-def build_app_shell(*, pathname, auth_data, portfolios, active_portfolio_id, ui_data):
+def build_app_shell(*, auth_data, portfolios, active_portfolio_id, ui_data):
     authenticated = bool(auth_data and auth_data.get("authenticated"))
     sidebar_open = bool((ui_data or {}).get("portfolio_sidebar_open"))
     menu_open = bool((ui_data or {}).get("menu_sidebar_open"))

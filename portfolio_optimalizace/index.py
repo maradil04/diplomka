@@ -1,4 +1,4 @@
-from dash import ALL, Input, Output, State, callback, ctx, dcc, html, no_update
+from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 
 from app import app
 from backend.services.portfolio_service import (
@@ -12,6 +12,7 @@ from backend.services.portfolio_service import (
 from backend.session import get_current_user
 from components.app_shell import build_app_shell
 from components.portfolio_sidebar import _sidebar_style
+from pages import home, predikce, rebalance
 
 server = app.server
 
@@ -24,6 +25,8 @@ app.layout = html.Div(
         dcc.Store(id="portfolio-list-store", storage_type="session"),
         dcc.Store(id="active-portfolio-store", storage_type="session"),
         dcc.Store(id="ui-store", storage_type="session", data={"portfolio_sidebar_open": False, "menu_sidebar_open": False}),
+        dcc.Interval(id="auth-bootstrap", interval=0, n_intervals=0, max_intervals=1),
+        dcc.Interval(id="active-portfolio-bootstrap", interval=0, n_intervals=0, max_intervals=1),
         html.Div(id="route-guard-anchor", style={"display": "none"}),
         html.Div(
             id="dashboard-empty-overlay",
@@ -36,7 +39,6 @@ app.layout = html.Div(
         html.Div(
             id="app-shell",
             children=build_app_shell(
-                pathname="/",
                 auth_data={},
                 portfolios=[],
                 active_portfolio_id=None,
@@ -46,11 +48,25 @@ app.layout = html.Div(
     ]
 )
 
+app.validation_layout = html.Div([app.layout, home.layout, predikce.layout, rebalance.layout])
+
+
+def _portfolio_id_from_state(portfolio_state):
+    if not isinstance(portfolio_state, dict):
+        return None
+    portfolio_id = portfolio_state.get("portfolio_id")
+    if portfolio_id in (None, ""):
+        return None
+    try:
+        return int(portfolio_id)
+    except (TypeError, ValueError):
+        return None
+
 
 def _serialize_transactions(user, portfolio_state):
     if not user:
         return []
-    portfolio_id = (portfolio_state or {}).get("portfolio_id") if isinstance(portfolio_state, dict) else None
+    portfolio_id = _portfolio_id_from_state(portfolio_state)
     dataframe = load_portfolio_transactions_dataframe(user["id"], portfolio_id, fallback=None)
     if dataframe is None:
         return []
@@ -75,35 +91,53 @@ def _serialize_auth(user):
     }
 
 
-@callback(
+@app.callback(
     Output("auth-store", "data"),
     Output("portfolio-list-store", "data"),
-    Output("active-portfolio-store", "data"),
-    Input("url", "pathname"),
+    Input("auth-bootstrap", "n_intervals"),
 )
-def hydrate_app_state(_pathname):
+def hydrate_auth_and_portfolios(_n_intervals):
     user = get_current_user()
     auth_data = _serialize_auth(user)
     if not user:
-        return auth_data, [], {"portfolio_id": None}
+        return auth_data, []
+
+    portfolios = list_user_portfolios(user["id"])
+    return auth_data, portfolios
+
+
+@app.callback(
+    Output("active-portfolio-store", "data"),
+    Input("active-portfolio-bootstrap", "n_intervals"),
+    State("active-portfolio-store", "data"),
+)
+def ensure_active_portfolio(_n_intervals, current_active_portfolio):
+    current_portfolio_id = _portfolio_id_from_state(current_active_portfolio)
+    if current_portfolio_id:
+        return no_update
+
+    user = get_current_user()
+    if not user:
+        return {"portfolio_id": None}
 
     active = resolve_active_portfolio(user["id"])
-    portfolios = list_user_portfolios(user["id"])
-    active_state = {"portfolio_id": active["id"] if active else None}
-    return auth_data, portfolios, active_state
+    return {"portfolio_id": active["id"] if active else None}
 
 
-@callback(
+@app.callback(
     Output("stored-data", "data", allow_duplicate=True),
-    Input("url", "pathname"),
     Input("active-portfolio-store", "data"),
-    Input("auth-store", "data"),
+    State("auth-store", "data"),
+    State("url", "pathname"),
     prevent_initial_call="initial_duplicate",
 )
-def sync_dashboard_stored_data(pathname, active_portfolio_state, auth_data):
+def sync_dashboard_stored_data(active_portfolio_state, auth_data, pathname):
     if pathname != "/dashboard":
         return no_update
     if not (auth_data or {}).get("authenticated"):
+        return []
+    portfolio_id = _portfolio_id_from_state(active_portfolio_state)
+    if not portfolio_id:
         return []
     user = get_current_user()
     if not user:
@@ -111,7 +145,7 @@ def sync_dashboard_stored_data(pathname, active_portfolio_state, auth_data):
     return _serialize_transactions(user, active_portfolio_state)
 
 
-@callback(
+@app.callback(
     Output("url", "pathname", allow_duplicate=True),
     Input("url", "pathname"),
     Input("auth-store", "data"),
@@ -119,12 +153,15 @@ def sync_dashboard_stored_data(pathname, active_portfolio_state, auth_data):
 )
 def guard_client_routes(pathname, auth_data):
     protected = {"/dashboard", "/predikce", "/rebalance"}
-    if pathname in protected and not (auth_data or {}).get("authenticated"):
+    authenticated = bool((auth_data or {}).get("authenticated"))
+    if not authenticated and get_current_user():
+        authenticated = True
+    if pathname in protected and not authenticated:
         return "/"
     return no_update
 
 
-@callback(
+@app.callback(
     Output("ui-store", "data"),
     Input("sidebar-toggle", "n_clicks"),
     State("ui-store", "data"),
@@ -138,7 +175,7 @@ def toggle_sidebar(n_clicks, ui_data):
     return current
 
 
-@callback(
+@app.callback(
     Output("ui-store", "data", allow_duplicate=True),
     Input("menu-toggle", "n_clicks"),
     Input("menu-close", "n_clicks"),
@@ -153,7 +190,7 @@ def toggle_menu_sidebar(menu_clicks, close_clicks, ui_data):
     return current
 
 
-@callback(
+@app.callback(
     Output("portfolio-list-store", "data", allow_duplicate=True),
     Output("active-portfolio-store", "data", allow_duplicate=True),
     Output("portfolio-sidebar-status", "children", allow_duplicate=True),
@@ -191,7 +228,7 @@ def handle_portfolio_actions(_select_clicks, _delete_clicks, auth_data):
     return no_update, no_update, no_update
 
 
-@callback(
+@app.callback(
     Output("portfolio-list-store", "data", allow_duplicate=True),
     Output("active-portfolio-store", "data", allow_duplicate=True),
     Output("portfolio-create-name", "value"),
@@ -215,16 +252,14 @@ def create_portfolio_from_sidebar(n_clicks, portfolio_name, auth_data):
     return portfolios, {"portfolio_id": portfolio["id"]}, "", status
 
 
-@callback(
+@app.callback(
     Output("app-shell", "children"),
-    Input("url", "pathname"),
     Input("auth-store", "data"),
     Input("portfolio-list-store", "data"),
     Input("active-portfolio-store", "data"),
 )
-def render_shell(pathname, auth_data, portfolio_list, active_portfolio):
+def render_shell(auth_data, portfolio_list, active_portfolio):
     return build_app_shell(
-        pathname=pathname,
         auth_data=auth_data or {},
         portfolios=portfolio_list or [],
         active_portfolio_id=(active_portfolio or {}).get("portfolio_id"),
@@ -232,7 +267,7 @@ def render_shell(pathname, auth_data, portfolio_list, active_portfolio):
     )
 
 
-@callback(
+@app.callback(
     Output("portfolio-sidebar", "style"),
     Output("sidebar-toggle-arrow", "children"),
     Output("sidebar-toggle", "style"),
@@ -267,7 +302,7 @@ def sync_sidebar_ui(ui_data, auth_data):
     return sidebar_style, ("‹" if sidebar_open else "›"), toggle_style
 
 
-@callback(
+@app.callback(
     Output("mobile-menu-sidebar", "style"),
     Input("ui-store", "data"),
     Input("auth-store", "data"),

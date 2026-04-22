@@ -1,7 +1,10 @@
-from dash import register_page, html, dcc, dash_table, Input, Output, State, callback, no_update
+from dash import register_page, html, dcc, dash_table, Input, Output, State, no_update, ctx
 import pandas as pd
 import numpy as np
 from scipy.optimize import minimize
+import dash
+
+app = dash.get_app()
 
 from backend.services.market_data_service import load_market_data
 from backend.services.portfolio_service import empty_transactions_dataframe, load_portfolio_transactions_dataframe
@@ -17,9 +20,21 @@ df_prices_all = load_market_data().copy()
 df_prices["Ticker_clean"] = df_prices["Ticker"].str.split(".").str[0]
 df_prices_all = df_prices.copy()
 
+def _portfolio_id_from_state(active_portfolio_data):
+    if not isinstance(active_portfolio_data, dict):
+        return None
+    portfolio_id = active_portfolio_data.get("portfolio_id")
+    if portfolio_id in (None, ""):
+        return None
+    try:
+        return int(portfolio_id)
+    except (TypeError, ValueError):
+        return None
+
+
 def _get_current_portfolio_df(active_portfolio_data):
     user = get_current_user()
-    portfolio_id = (active_portfolio_data or {}).get("portfolio_id") if isinstance(active_portfolio_data, dict) else None
+    portfolio_id = _portfolio_id_from_state(active_portfolio_data)
     if user and portfolio_id:
         loaded = load_portfolio_transactions_dataframe(user["id"], portfolio_id, fallback=df_empty)
         return loaded.copy() if isinstance(loaded, pd.DataFrame) else df_empty.copy()
@@ -306,16 +321,18 @@ def cvar_optimize(returns: np.ndarray, alpha: float = 0.95, long_only: bool = Tr
 
 ###############################################################################xx
 
-@callback(
+@app.callback(
     Output("mv-table", "data"),
     Output("mv-status", "children"),
     Input("mv-run", "n_clicks"),
-    State("active-portfolio-store", "data"),
+    Input("active-portfolio-store", "data"),
     State("mv-lambda", "value"),
     State("mv-longonly", "value"),
     prevent_initial_call=True
 )
 def run_rebalance(n_clicks, active_portfolio_data, lam, longonly_values):
+    if ctx.triggered_id != "mv-run":
+        return no_update, no_update
     long_only = "LONG" in (longonly_values or [])
 
     # 1) Získej returns
@@ -384,16 +401,18 @@ def run_rebalance(n_clicks, active_portfolio_data, lam, longonly_values):
 
 
 
-@callback(
+@app.callback(
     Output("rp-table", "data"),
     Output("rp-status", "children"),
     Input("rp-run", "n_clicks"),
-    State("active-portfolio-store", "data"),
+    Input("active-portfolio-store", "data"),
     State("rp-longonly", "value"),
     State("rp-gross-cap", "value"),
     prevent_initial_call=True
 )
 def run_risk_parity(n_clicks, active_portfolio_data, longonly_values, gross_cap):
+    if ctx.triggered_id != "rp-run":
+        return no_update, no_update
     long_only = "LONG" in (longonly_values or [])
 
     # returns
@@ -454,16 +473,18 @@ def run_risk_parity(n_clicks, active_portfolio_data, longonly_values, gross_cap)
 
 
 
-@callback(
+@app.callback(
     Output("cvar-table", "data"),
     Output("cvar-status", "children"),
     Input("cvar-run", "n_clicks"),
-    State("active-portfolio-store", "data"),
+    Input("active-portfolio-store", "data"),
     State("cvar-alpha", "value"),
     State("cvar-longonly", "value"),
     prevent_initial_call=True
 )
 def run_cvar(n_clicks, active_portfolio_data, alpha, longonly_values):
+    if ctx.triggered_id != "cvar-run":
+        return no_update, no_update
     long_only = "LONG" in (longonly_values or [])
 
     # returns
@@ -517,7 +538,7 @@ def run_cvar(n_clicks, active_portfolio_data, alpha, longonly_values):
 
     return out, status
 
-@callback(
+@app.callback(
     Output("mv-clip", "content"),
     Input("mv-table", "data"),
 )
@@ -528,7 +549,7 @@ def set_mv_clipboard(rows):
     ]
     return _table_to_tsv(rows or [], cols)
 
-@callback(
+@app.callback(
     Output("rp-clip", "content"),
     Input("rp-table", "data"),
 )
@@ -540,7 +561,7 @@ def set_rp_clipboard(rows):
     ]
     return _table_to_tsv(rows or [], cols)
 
-@callback(
+@app.callback(
     Output("cvar-clip", "content"),
     Input("cvar-table", "data"),
 )
@@ -557,7 +578,7 @@ def _save_rebalance_result(active_portfolio_data, portfolio_name, rows, derived_
     if not user:
         return no_update, no_update, no_update
 
-    source_portfolio_id = (active_portfolio_data or {}).get("portfolio_id") if isinstance(active_portfolio_data, dict) else None
+    source_portfolio_id = _portfolio_id_from_state(active_portfolio_data)
     if not source_portfolio_id:
         return "Select a source portfolio first.", no_update, no_update
 
@@ -575,7 +596,8 @@ def _save_rebalance_result(active_portfolio_data, portfolio_name, rows, derived_
         return f"Save failed: {exc}", no_update, no_update
 
 
-@callback(
+
+@app.callback(
     Output("mv-save-status", "children"),
     Output("portfolio-list-store", "data", allow_duplicate=True),
     Output("mv-save-name", "value"),
@@ -591,7 +613,7 @@ def save_mv_portfolio(n_clicks, active_portfolio_data, portfolio_name, rows):
     return _save_rebalance_result(active_portfolio_data, portfolio_name, rows, "rebalance_mv")
 
 
-@callback(
+@app.callback(
     Output("rp-save-status", "children"),
     Output("portfolio-list-store", "data", allow_duplicate=True),
     Output("rp-save-name", "value"),
@@ -607,7 +629,7 @@ def save_rp_portfolio(n_clicks, active_portfolio_data, portfolio_name, rows):
     return _save_rebalance_result(active_portfolio_data, portfolio_name, rows, "rebalance_rp")
 
 
-@callback(
+@app.callback(
     Output("cvar-save-status", "children"),
     Output("portfolio-list-store", "data", allow_duplicate=True),
     Output("cvar-save-name", "value"),
