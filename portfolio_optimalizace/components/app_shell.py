@@ -49,6 +49,12 @@ def build_app_shell(*, auth_data, portfolios, active_portfolio_id, ui_data):
                 id="menu-toggle",
                 n_clicks=0,
                 className="shell-menu-toggle",
+                style={
+                    "position": "relative",
+                    "zIndex": 1301,
+                    "pointerEvents": "auto",
+                    "touchAction": "manipulation",
+                },
                 children=[html.Span("Menu")],
             ),
             html.Div(nav_children, className="shell-nav", style={"display": "flex", "alignItems": "center"}),

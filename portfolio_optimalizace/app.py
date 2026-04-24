@@ -17,6 +17,12 @@ app = Dash(
     use_pages=True,
     suppress_callback_exceptions=True,
     prevent_initial_callbacks="initial_duplicate",
+    meta_tags=[
+        {
+            "name": "viewport",
+            "content": "width=device-width, initial-scale=1, viewport-fit=cover",
+        }
+    ],
 )
 server = app.server
 

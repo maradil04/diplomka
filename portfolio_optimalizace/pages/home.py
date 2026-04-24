@@ -1,5 +1,5 @@
 ﻿from dash import register_page, html, dcc, dash_table, no_update
-from dash import Input, Output, State
+from dash import Input, Output, State, MATCH
 import pandas as pd
 import plotly.express as px
 from datetime import date
@@ -114,6 +114,46 @@ def _parse_money_series(series):
     s = s.where(~(has_comma & has_dot), s.str.replace(",", "", regex=False))
     s = s.str.replace(r"[^0-9.\-]", "", regex=True)
     return pd.to_numeric(s, errors="coerce")
+
+
+def _format_numeric_display(value, *, decimals=2, suffix="", trim_trailing=False):
+    if pd.isna(value):
+        return "-"
+    number = float(value)
+    text = f"{number:,.{decimals}f}".replace(",", " ")
+    if trim_trailing and "." in text:
+        text = text.rstrip("0").rstrip(".")
+    if suffix:
+        text = f"{text} {suffix}"
+    return text
+
+
+def _build_dashboard_section(section_id, title, children):
+    return html.Div(
+        className="dashboard-section",
+        children=[
+            html.Button(
+                id={"type": "dashboard-section-toggle", "index": section_id},
+                className="dashboard-section-toggle",
+                n_clicks=0,
+                children=[
+                    html.Span(title, className="dashboard-section-title"),
+                    html.Span(
+                        "▾",
+                        id={"type": "dashboard-section-arrow", "index": section_id},
+                        className="dashboard-section-arrow",
+                    ),
+                ],
+            ),
+            html.Div(
+                id={"type": "dashboard-section-content", "index": section_id},
+                className="dashboard-section-content",
+                children=[
+                    html.Div(children, className="dashboard-section-content-inner"),
+                ],
+            ),
+        ],
+    )
 
 
 def _hex_to_rgb(color):
@@ -878,10 +918,23 @@ def vypocitat_hlavni_tabulku(vybrane_datum, active_portfolio_data):
         ]]
         final_df = final_df.rename(columns = {"Ticker":"TICKER","Total_purch_val":"CELKOVÁ KUPNÍ HODNOTA","Total_curr_val":"CELKOVÁ SOUČASNÁ HODNOTA",
                                                "Total_quantity":"CELKOVÝ POČET","Avg_purch_price":"PRŮMĚRNÁ NÁKUPNÍ CENA","Dividenda":"DIVIDENDA","Profit":"PROFIT" })
+        display_df = final_df.copy()
+        currency_columns = [
+            "CELKOVÁ KUPNÍ HODNOTA",
+            "CELKOVÁ SOUČASNÁ HODNOTA",
+            "PRŮMĚRNÁ NÁKUPNÍ CENA",
+            "DIVIDENDA",
+            "PROFIT",
+        ]
+        for column in currency_columns:
+            display_df[column] = display_df[column].apply(lambda value: _format_numeric_display(value, decimals=2, suffix="€"))
+        display_df["CELKOVÝ POČET"] = display_df["CELKOVÝ POČET"].apply(
+            lambda value: _format_numeric_display(value, decimals=4, trim_trailing=True)
+        )
 
         return dash_table.DataTable(
-            columns=[{"name": c, "id": c} for c in final_df.columns],
-            data=final_df.to_dict("records"),
+            columns=[{"name": c, "id": c} for c in display_df.columns],
+            data=display_df.to_dict("records"),
             style_table={"overflowX": "auto"},
             style_cell={
                 "textAlign": "left",
@@ -889,6 +942,14 @@ def vypocitat_hlavni_tabulku(vybrane_datum, active_portfolio_data):
                 "color": "white",
                 "fontFamily": "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif"
             },
+            style_data_conditional=[
+                {
+                    "if": {"column_id": column},
+                    "textAlign": "right",
+                }
+                for column in display_df.columns
+                if column != "TICKER"
+            ],
             style_header={
                 "backgroundColor": "#2a2a2a",
                 "color": "#fff",
@@ -924,16 +985,16 @@ def vypocitat_celkovy_profit(vybrane_datum, active_portfolio_data):
         str_roi = f"{metrics['roi']}%"
 
         vystup = pd.DataFrame({
-            "CELKOVÁ HODNOTA PORTFOLIA": [metrics["portfolio_value_total"]],
-            "CELKOVĚ INVESTOVÁNO": [metrics["invested_total"]],
-            "CELKOVÝ VÝNOS PORTFOLIA": [metrics["total_profit"]],
+            "CELKOVÁ HODNOTA PORTFOLIA": [_format_numeric_display(metrics["portfolio_value_total"], decimals=2, suffix="€")],
+            "CELKOVĚ INVESTOVÁNO": [_format_numeric_display(metrics["invested_total"], decimals=2, suffix="€")],
+            "CELKOVÝ VÝNOS PORTFOLIA": [_format_numeric_display(metrics["total_profit"], decimals=2, suffix="€")],
             "ROI": [str_roi]
         })
 
         if not metrics["negative_theme"]:
-            barva = "rgba(0, 128, 0, 0.8)"
+            barva = "rgba(0, 161, 123, 0.48)"
         else:
-            barva = "rgba(255, 0, 0, 0.8)"
+            barva = "rgba(217, 74, 74, 0.42)"
 
         return dash_table.DataTable(
             columns=[{"name": i, "id": i} for i in vystup.columns],
@@ -954,6 +1015,9 @@ def vypocitat_celkovy_profit(vybrane_datum, active_portfolio_data):
                 "fontSize": "24px",
                 "fontWeight": "bold",
                 "padding": "20px",
+                "width": f"{100 / max(len(vystup.columns), 1)}%",
+                "minWidth": f"{100 / max(len(vystup.columns), 1)}%",
+                "maxWidth": f"{100 / max(len(vystup.columns), 1)}%",
             },
             style_header={
                 "fontSize": "20px",
@@ -984,7 +1048,7 @@ def vypocitat_portfolio_risk_summary(vybrane_datum, active_portfolio_data):
     try:
         target_date = _to_naive_ts(vybrane_datum)
         metrics = _resolve_summary_metrics(target_date, df, active_portfolio_data)
-        barva = "rgba(255, 0, 0, 0.8)" if metrics["negative_theme"] else "rgba(0, 128, 0, 0.8)"
+        barva = "rgba(217, 74, 74, 0.42)" if metrics["negative_theme"] else "rgba(0, 161, 123, 0.48)"
         risk_df = pd.DataFrame({
             "ANUALIZOVANÝ VÝNOS": [f"{metrics['annualized_return']}%"],
             "MAX DRAWDOWN": [f"{metrics['max_drawdown']}%"],
@@ -1010,6 +1074,9 @@ def vypocitat_portfolio_risk_summary(vybrane_datum, active_portfolio_data):
                 "fontSize": "24px",
                 "fontWeight": "bold",
                 "padding": "20px",
+                "width": f"{100 / max(len(risk_df.columns), 1)}%",
+                "minWidth": f"{100 / max(len(risk_df.columns), 1)}%",
+                "maxWidth": f"{100 / max(len(risk_df.columns), 1)}%",
             },
             style_header={
                 "fontSize": "20px",
@@ -1073,10 +1140,16 @@ def vypocitat_asset_risk_summary(vybrane_datum, active_portfolio_data):
     risk_df = pd.DataFrame(risk_rows).sort_values(by="Ticker") if risk_rows else pd.DataFrame(
         columns=["Ticker", "Volatilita", "Sharpe Ratio", "Sortino Ratio"]
     )
+    display_risk_df = risk_df.copy()
+    for column in ["Volatilita", "Sharpe Ratio", "Sortino Ratio"]:
+        if column in display_risk_df.columns:
+            display_risk_df[column] = display_risk_df[column].apply(
+                lambda value: _format_numeric_display(value, decimals=6, trim_trailing=True)
+            )
 
     return dash_table.DataTable(
-        columns=[{"name": i, "id": i} for i in risk_df.columns],
-        data=risk_df.to_dict("records"),
+        columns=[{"name": i, "id": i} for i in display_risk_df.columns],
+        data=display_risk_df.to_dict("records"),
         style_table={"overflowX": "auto"},
         style_cell={
             "textAlign": "left",
@@ -1084,6 +1157,14 @@ def vypocitat_asset_risk_summary(vybrane_datum, active_portfolio_data):
             "color": "white",
             "fontFamily": "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif"
         },
+        style_data_conditional=[
+            {
+                "if": {"column_id": column},
+                "textAlign": "right",
+            }
+            for column in display_risk_df.columns
+            if column != "Ticker"
+        ],
         style_header={
             "backgroundColor": "#2a2a2a",
             "color": "#fff",
@@ -1521,6 +1602,20 @@ def upload_and_store(contents, filename, active_portfolio_data):
         )
     except Exception as exc:
         return dash.no_update, dash.no_update, f"Upload failed: {exc}"
+
+
+@app.callback(
+    Output({"type": "dashboard-section-content", "index": MATCH}, "className"),
+    Output({"type": "dashboard-section-arrow", "index": MATCH}, "children"),
+    Input({"type": "dashboard-section-toggle", "index": MATCH}, "n_clicks"),
+    prevent_initial_call=False,
+)
+def toggle_dashboard_section(n_clicks):
+    is_open = bool(n_clicks and n_clicks % 2 == 1)
+    return (
+        "dashboard-section-content is-open" if is_open else "dashboard-section-content",
+        "▴" if is_open else "▾",
+    )
  
 
 layout = html.Div(
@@ -1546,93 +1641,111 @@ layout = html.Div(
                             children=[
                                 html.Div(id="vystup_zaklad_tabulka"),
                                 html.Div(id="portfolio-risk-summary"),
-
-                                html.Div(
-                                    className="dropdown-graph-wrapper",
-                                    children=[
-                                        html.H2("Souhrnná tabulka portfolia"),
-                                        html.Div(id="vystup_tabulka_portfolio"),
-                                    ],
+                                _build_dashboard_section(
+                                    "portfolio-table",
+                                    "Souhrnna tabulka portfolia",
+                                    html.Div(
+                                        className="dropdown-graph-wrapper",
+                                        children=[
+                                            html.Div(id="vystup_tabulka_portfolio"),
+                                        ],
+                                    ),
                                 ),
-
-                                html.Div(
-                                    className="dropdown-graph-wrapper",
-                                    children=[
-                                        html.H2("Ukazatele rizika"),
-                                        html.Div(id="asset-risk-summary", className="modern-table"),
-                                    ],
+                                _build_dashboard_section(
+                                    "asset-risk-table",
+                                    "Ukazatele rizika",
+                                    html.Div(
+                                        className="dropdown-graph-wrapper",
+                                        children=[
+                                            html.Div(id="asset-risk-summary", className="modern-table"),
+                                        ],
+                                    ),
                                 ),
-
-                                html.Div(
-                                    className="dropdown-graph-wrapper",
-                                    children=[
-                                        html.H2("Vyber frekvenci dat:"),
-                                        dcc.Dropdown(
-                                            ['Daily', 'Monthly'],
-                                            'Daily',
-                                            id='frequency-dropdown',
-                                            className="dropdown"
-                                        ),
-                                        html.Div(id="portfolio_v_case"),
-                                    ],
+                                _build_dashboard_section(
+                                    "portfolio-value-history",
+                                    "Hodnota portfolia v case",
+                                    html.Div(
+                                        className="dropdown-graph-wrapper",
+                                        children=[
+                                            html.H2("Vyber frekvenci dat:"),
+                                            dcc.Dropdown(
+                                                ['Daily', 'Monthly'],
+                                                'Daily',
+                                                id='frequency-dropdown',
+                                                className="dropdown"
+                                            ),
+                                            html.Div(id="portfolio_v_case"),
+                                        ],
+                                    ),
                                 ),
-
-                                html.Div(
-                                    className="dropdown-graph-wrapper",
-                                    children=[
-                                        html.H2("Vyber aktiva:"),
-                                        dcc.Dropdown(
-                                            tickers_l,
-                                            tickers_l_default,
-                                            id='ticker-dropdown',
-                                            multi=True,
-                                            className="dropdown"
-                                        ),
-
-                                        html.H2("Vyber počáteční datum:"),
-                                        dcc.DatePickerSingle(
-                                            id="vyber-start_date",
-                                            date=min(df_prices["date"]),
-                                            display_format="DD.MM.YYYY",
-                                            placeholder="Vyber datum",
-                                        ),
-                                        dcc.Graph(id="price-graph", className="graph"),
-                                    ],
+                                _build_dashboard_section(
+                                    "asset-selection",
+                                    "Vyber aktiva",
+                                    html.Div(
+                                        className="dropdown-graph-wrapper",
+                                        children=[
+                                            html.H2("Vyber aktiva:"),
+                                            dcc.Dropdown(
+                                                tickers_l,
+                                                tickers_l_default,
+                                                id='ticker-dropdown',
+                                                multi=True,
+                                                className="dropdown"
+                                            ),
+                                            html.H2("Vyber pocatecni datum:"),
+                                            dcc.DatePickerSingle(
+                                                id="vyber-start_date",
+                                                date=min(df_prices["date"]),
+                                                display_format="DD.MM.YYYY",
+                                                placeholder="Vyber datum",
+                                            ),
+                                            dcc.Graph(id="price-graph", className="graph"),
+                                        ],
+                                    ),
                                 ),
-
-                                html.Div(
-                                    className="dropdown-graph-wrapper",
-                                    children=[
-                                        html.H2("Vyber aktiva na porovnání:"),
-                                        dcc.Dropdown(
-                                            tickers_all,
-                                            tickers_default,
-                                            id='compare_tickers',
-                                            multi=True,
-                                            className="dropdown"
-                                        ),
-                                        dcc.Graph(id="compare_graph", className="graph"),
-                                    ],
+                                _build_dashboard_section(
+                                    "benchmark-compare",
+                                    "Porovnani s benchmarky",
+                                    html.Div(
+                                        className="dropdown-graph-wrapper",
+                                        children=[
+                                            html.H2("Vyber aktiva na porovnani:"),
+                                            dcc.Dropdown(
+                                                tickers_all,
+                                                tickers_default,
+                                                id='compare_tickers',
+                                                multi=True,
+                                                className="dropdown"
+                                            ),
+                                            dcc.Graph(id="compare_graph", className="graph"),
+                                        ],
+                                    ),
                                 ),
-
-                                html.Div(
-                                    className="dropdown-graph-wrapper",
-                                    children=[
-                                        html.Div(
-                                            className="row-container",
-                                            children=[
-                                                dcc.Graph(id="vystup-div", className="mini-graph"),
-                                                dcc.Graph(id="vystup_fee_div", className="mini-graph"),
-                                            ],
-                                        )
-                                    ],
+                                _build_dashboard_section(
+                                    "portfolio-breakdown",
+                                    "Slozeni portfolia a poplatky",
+                                    html.Div(
+                                        className="dropdown-graph-wrapper",
+                                        children=[
+                                            html.Div(
+                                                className="row-container",
+                                                children=[
+                                                    dcc.Graph(id="vystup-div", className="mini-graph"),
+                                                    dcc.Graph(id="vystup_fee_div", className="mini-graph"),
+                                                ],
+                                            )
+                                        ],
+                                    ),
                                 ),
-                                html.Div(
-                                    className="dropdown-graph-wrapper",
-                                    children=[
-                                        html.H2("Dividendy po mesicich"),
-                                        dcc.Graph(id="monthly-dividends-graph", className="graph"),
-                                    ],
+                                _build_dashboard_section(
+                                    "monthly-dividends",
+                                    "Dividendy po mesicich",
+                                    html.Div(
+                                        className="dropdown-graph-wrapper",
+                                        children=[
+                                            dcc.Graph(id="monthly-dividends-graph", className="graph"),
+                                        ],
+                                    ),
                                 ),
                             ],
                         ),

@@ -745,9 +745,79 @@ body {
     margin-left: -2.8rem;
 }
 
+.dashboard-section {
+    margin-bottom: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 14px;
+    background: rgba(8, 8, 8, 0.22);
+    overflow: hidden;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
+}
+
+.dashboard-section-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 18px 22px;
+    border: none;
+    background: rgba(12, 12, 12, 0.3);
+    color: #ffffff;
+    cursor: pointer;
+    text-align: left;
+    transition: background-color 0.18s ease, color 0.18s ease;
+}
+
+.dashboard-section-toggle:hover {
+    background: rgba(0, 161, 123, 0.12);
+}
+
+.dashboard-section-title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+.dashboard-section-arrow {
+    color: #00a17b;
+    font-size: 1.3rem;
+    line-height: 1;
+    flex: 0 0 auto;
+    transition: transform 0.22s ease, color 0.18s ease;
+}
+
+.dashboard-section-content {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0.35;
+    transition: grid-template-rows 0.28s ease, opacity 0.24s ease;
+}
+
+.dashboard-section-content.is-open {
+    grid-template-rows: 1fr;
+    opacity: 1;
+}
+
+.dashboard-section-content-inner {
+    min-height: 0;
+    overflow: hidden;
+    padding: 0 16px 0;
+}
+
+.dashboard-section-content.is-open .dashboard-section-content-inner {
+    padding: 16px;
+}
+
+.dashboard-section .dropdown-graph-wrapper {
+    margin-bottom: 0;
+}
+
 @media (max-width: 900px) {
     .shell-header {
         padding: 0 14px !important;
+        z-index: 2100 !important;
+        pointer-events: auto;
     }
 
     .shell-menu-toggle {
@@ -764,6 +834,10 @@ body {
         cursor: pointer;
         font-size: 16px;
         font-weight: 600;
+        position: relative;
+        z-index: 2101;
+        pointer-events: auto;
+        touch-action: manipulation;
     }
 
     .shell-nav,
@@ -838,6 +912,18 @@ body {
     #portfolio-sidebar,
     #sidebar-toggle {
         display: none !important;
+    }
+
+    .dashboard-section-toggle {
+        padding: 16px 18px;
+    }
+
+    .dashboard-section-title {
+        font-size: 1.05rem;
+    }
+
+    .dashboard-section-content.is-open .dashboard-section-content-inner {
+        padding: 14px;
     }
 }
 
