@@ -27,7 +27,7 @@ from scipy.stats import shapiro
 from arch import arch_model
 
 from backend.services.market_data_service import load_market_data
-from backend.services.portfolio_service import empty_transactions_dataframe, load_portfolio_transactions_dataframe
+from backend.services.portfolio_service import empty_transactions_dataframe, load_portfolio_transactions_dataframe, parse_money_series
 from backend.session import get_current_user
 from utils.portfolio_history import build_portfolio_value_history, portfolio_tickers
 
@@ -101,6 +101,93 @@ def hodnota_portfolia_v_case(df, df_prices):
     if history.empty:
         return pd.DataFrame(columns=["date", "portfolio_value"])
     return history
+
+
+def _to_naive_day(series):
+    return pd.to_datetime(series, errors="coerce", utc=True).dt.tz_convert(None).dt.floor("D")
+
+
+def _portfolio_external_flows(dataframe: pd.DataFrame) -> pd.DataFrame:
+    if not isinstance(dataframe, pd.DataFrame) or dataframe.empty:
+        return pd.DataFrame(columns=["Date", "flow"])
+
+    flows = dataframe.copy()
+    required = {"Date", "Type", "Total Amount"}
+    if not required.issubset(set(flows.columns)):
+        return pd.DataFrame(columns=["Date", "flow"])
+
+    flows = flows[flows["Type"].isin(["CASH TOP-UP", "CASH WITHDRAWAL"])].copy()
+    if flows.empty:
+        return pd.DataFrame(columns=["Date", "flow"])
+
+    flows["Date"] = _to_naive_day(flows["Date"])
+    flows["flow"] = parse_money_series(flows["Total Amount"]).fillna(0.0).abs()
+    flows.loc[flows["Type"].eq("CASH WITHDRAWAL"), "flow"] *= -1.0
+    return flows.groupby("Date", as_index=False)["flow"].sum().sort_values("Date")
+
+
+def build_portfolio_twr_index(dataframe: pd.DataFrame, price_dataframe: pd.DataFrame, base: float = 100.0) -> pd.DataFrame:
+    by_day = build_portfolio_value_history(dataframe, price_dataframe)
+    if by_day.empty:
+        return pd.DataFrame(columns=["date", "portfolio_value", "flow", "twr_return", "twr_index"])
+
+    out = by_day.copy()
+    out["date"] = _to_naive_day(out["date"])
+    out["portfolio_value"] = pd.to_numeric(out["portfolio_value"], errors="coerce").fillna(0.0)
+    out = out.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
+
+    flows = _portfolio_external_flows(dataframe)
+    if not flows.empty:
+        pv_dates = out[["date"]].sort_values("date")
+        mapped = pd.merge_asof(
+            flows,
+            pv_dates,
+            left_on="Date",
+            right_on="date",
+            direction="forward",
+        ).dropna(subset=["date"])
+        flow_on_pvday = mapped.groupby("date", as_index=False)["flow"].sum()
+    else:
+        flow_on_pvday = pd.DataFrame({"date": out["date"], "flow": 0.0})
+
+    out = out.merge(flow_on_pvday, on="date", how="left").fillna({"flow": 0.0}).sort_values("date").reset_index(drop=True)
+
+    first_idx = int((out["portfolio_value"] > 0).idxmax()) if (out["portfolio_value"] > 0).any() else 0
+    first_value = float(out.loc[first_idx, "portfolio_value"])
+    first_flow = float(out.loc[first_idx, "flow"])
+    if first_value > 0:
+        gap = first_value - first_flow
+        if abs(gap) > max(1e-6, 1e-4 * first_value):
+            out.loc[first_idx, "flow"] += gap
+
+    values = out["portfolio_value"].astype(float).values
+    flows = out["flow"].astype(float).values
+    nav = np.empty_like(values, dtype=float)
+    units = np.empty_like(values, dtype=float)
+
+    nav_prev = 1.0
+    units_prev = 0.0 if values[0] <= 0 else values[0] / nav_prev
+    nav[0] = nav_prev
+    units[0] = units_prev
+
+    for idx in range(1, len(values)):
+        if nav_prev == 0:
+            nav_prev = 1.0
+        units_i = units_prev + flows[idx] / nav_prev
+        nav_i = 1.0 if units_i == 0 else values[idx] / units_i
+        units[idx] = units_i
+        nav[idx] = nav_i
+        units_prev, nav_prev = units_i, nav_i
+
+    out["twr_return"] = pd.Series(nav).pct_change().fillna(0.0)
+    out["twr_index"] = base * (1.0 + out["twr_return"]).cumprod()
+
+    pos_idx = np.argmax(units > 0)
+    if units[pos_idx] > 0 and pos_idx > 0:
+        out = out.iloc[pos_idx:].reset_index(drop=True)
+        out["twr_index"] = base * out["twr_index"] / out["twr_index"].iloc[0]
+
+    return out[["date", "portfolio_value", "flow", "twr_return", "twr_index"]]
 
 def split_by_ticker(df, test_size=0.2):
     df = df.sort_values("date")
@@ -649,34 +736,43 @@ def portfolio_mean_plus_volatility_forecast(n_clicks, active_portfolio_data):
         if prices_filtered.empty:
             return html.Div([html.H3("Predikce - Portfolio"), html.P("Nenalezena cenova data pro tickery z portfolia.")])
 
-        portfolio_hist = hodnota_portfolia_v_case(df_local, prices_filtered)
-        if portfolio_hist.empty or "portfolio_value" not in portfolio_hist.columns:
-            return html.Div([html.H3("Predikce - Portfolio"), html.P("Nedostatek dat pro vypocet casove rady portfolia.")])
+        portfolio_twr = build_portfolio_twr_index(df_local, prices_filtered, base=100.0)
+        if portfolio_twr.empty or "twr_index" not in portfolio_twr.columns:
+            return html.Div([html.H3("Predikce - Portfolio"), html.P("Nedostatek dat pro vypocet cash-flow-adjusted vykonnosti portfolia.")])
 
-        price_series = (
-            portfolio_hist[["date", "portfolio_value"]]
+        performance_series = (
+            portfolio_twr[["date", "twr_index"]]
+            .dropna(subset=["date", "twr_index"])
+            .drop_duplicates(subset=["date"])
+            .sort_values("date")
+            .set_index("date")["twr_index"]
+            .astype(float)
+        )
+        performance_series = performance_series[performance_series > 0].dropna().asfreq("B").ffill()
+
+        current_value_series = (
+            portfolio_twr[["date", "portfolio_value"]]
             .dropna(subset=["date", "portfolio_value"])
             .drop_duplicates(subset=["date"])
             .sort_values("date")
             .set_index("date")["portfolio_value"]
             .astype(float)
         )
-        price_series = price_series[price_series > 0].dropna()
-        price_series = price_series.asfreq("B").ffill()
+        current_value_series = current_value_series[current_value_series > 0].dropna().asfreq("B").ffill()
 
         forecast_steps = 30
         min_obs = 80
         ticker = "Portfolio"
 
-        if len(price_series) < min_obs:
-            hist = pd.DataFrame({"date": price_series.index, "adjusted_close": price_series.values})
+        if len(performance_series) < min_obs:
+            hist = pd.DataFrame({"date": performance_series.index, "adjusted_close": performance_series.values})
             return html.Div([
                 html.H3(f"Predikce - {ticker}"),
-                html.P(f"Malo cenovych pozorovani ({len(price_series)}), minimum je {min_obs}."),
-                dcc.Graph(figure=px.line(hist, x="date", y="adjusted_close", title=f"Historie ceny - {ticker}"))
+                html.P(f"Malo cash-flow-adjusted pozorovani ({len(performance_series)}), minimum je {min_obs}."),
+                dcc.Graph(figure=px.line(hist, x="date", y="adjusted_close", title=f"Cash-flow-adjusted historie - {ticker}"))
             ])
 
-        log_ret = np.log(price_series).diff().dropna()
+        log_ret = np.log(performance_series).diff().dropna()
         if len(log_ret) < min_obs:
             return html.Div([
                 html.H3(f"Predikce - {ticker}"),
@@ -687,7 +783,7 @@ def portfolio_mean_plus_volatility_forecast(n_clicks, active_portfolio_data):
         if mean_model is None:
             return html.Div([html.H3(f"Predikce - {ticker}"), html.P("Nepodarilo se najit stabilni ARIMA model.")])
 
-        future_index = make_future_index(price_series.index, forecast_steps)
+        future_index = make_future_index(performance_series.index, forecast_steps)
         future_mean_lr = pd.Series(mean_model.forecast(steps=forecast_steps).values, index=future_index, name="mu_lr")
 
         resid = pd.Series(getattr(mean_model, "resid", None))
@@ -702,24 +798,29 @@ def portfolio_mean_plus_volatility_forecast(n_clicks, active_portfolio_data):
         sigma_future, garch_label, garch_rmse, arch_p, arch_stat = forecast_sigma_series(
             resid, future_index, forecast_steps
         )
-        last_price = float(price_series.iloc[-1])
-        price_pred = returns_to_price_path(last_price, future_mean_lr)
+        last_index_level = float(performance_series.iloc[-1])
+        current_portfolio_value = float(current_value_series.iloc[-1])
+        pred_index = returns_to_price_path(last_index_level, future_mean_lr)
         if sigma_future.isna().all():
             hist_sigma = float(log_ret.std(ddof=1))
             sigma_future = pd.Series(np.full(forecast_steps, hist_sigma), index=future_index, name="sigma")
 
-        lower1, upper1 = sigma_to_price_bands(last_price, future_mean_lr, sigma_future, k=1.0)
-        lower2, upper2 = sigma_to_price_bands(last_price, future_mean_lr, sigma_future, k=2.0)
+        lower1_index, upper1_index = sigma_to_price_bands(last_index_level, future_mean_lr, sigma_future, k=1.0)
+        lower2_index, upper2_index = sigma_to_price_bands(last_index_level, future_mean_lr, sigma_future, k=2.0)
+        scale = current_portfolio_value / max(last_index_level, 1e-12)
+        price_pred = pred_index * scale
+        lower1, upper1 = lower1_index * scale, upper1_index * scale
+        lower2, upper2 = lower2_index * scale, upper2_index * scale
 
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=price_series.index, y=price_series.values, mode="lines", name=f"{ticker} - historie", line=dict(width=2, color=HISTORY_COLOR)))
+        fig.add_trace(go.Scatter(x=current_value_series.index, y=current_value_series.values, mode="lines", name=f"{ticker} - historie", line=dict(width=2, color=HISTORY_COLOR)))
         fig.add_trace(go.Scatter(x=price_pred.index, y=price_pred.values, mode="lines", name=f"{ticker} - predikce (mean)", line=dict(width=2, dash="dot", color=PREDICTION_COLOR)))
         fig.add_trace(go.Scatter(x=upper2.index, y=upper2.values, mode="lines", line=dict(width=0, color=VOLATILITY_COLOR), name="+2sigma", showlegend=False))
         fig.add_trace(go.Scatter(x=lower2.index, y=lower2.values, mode="lines", line=dict(width=0, color=VOLATILITY_COLOR), name="-2sigma", fill="tonexty", fillcolor=VOLATILITY_FILL_SOFT, showlegend=True))
         fig.add_trace(go.Scatter(x=upper1.index, y=upper1.values, mode="lines", line=dict(width=0, color=VOLATILITY_COLOR), name="+1sigma", showlegend=False))
         fig.add_trace(go.Scatter(x=lower1.index, y=lower1.values, mode="lines", line=dict(width=0, color=VOLATILITY_COLOR), name="Volatilni pasmo +/-1sigma", fill="tonexty", fillcolor=VOLATILITY_FILL_STRONG, showlegend=True))
 
-        extra = f"{mean_label} (RMSE={mean_rmse:.4f})"
+        extra = f"{mean_label} on cash-flow-adjusted returns (RMSE={mean_rmse:.4f})"
         extra += f" | ARCH p={arch_p:.4g} -> {garch_label}"
         if np.isfinite(garch_rmse):
             extra += f" (RMSE={garch_rmse:.4f})"

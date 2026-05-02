@@ -451,3 +451,220 @@
         grid-template-columns: 1fr;
     }
 }
+
+/* Responsive overrides */
+.rb-actions {
+    flex-wrap: wrap;
+}
+
+.rb-action {
+    flex: 1 1 220px;
+    width: auto;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.rb-table-toolbar {
+    align-items: stretch;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.rb-table-toolbar .rb-btn.rb-pill {
+    flex: 1 1 220px;
+    width: auto !important;
+    min-width: 0;
+    white-space: normal;
+}
+
+.rb-table-toolbar .rb-copy-btn {
+    flex: 0 0 auto;
+}
+
+.rb-table-toolbar input[type="text"] {
+    flex: 1 1 220px;
+    min-width: 0;
+    width: 100% !important;
+    box-sizing: border-box;
+    height: auto;
+    min-height: 0;
+    padding: 0.7rem 0.9rem !important;
+    line-height: 1.2;
+    font-size: 1rem;
+}
+
+@media (max-width: 980px) {
+    .rb-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .rb-actions {
+        display: grid !important;
+        grid-template-columns: 1fr !important;
+        align-items: stretch !important;
+        gap: 10px !important;
+    }
+
+    .rb-action {
+        display: block !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        flex: none !important;
+    }
+}
+
+@media (max-width: 720px) {
+    .rb-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .rb-page {
+        width: 100%;
+        max-width: 100%;
+        overflow-x: hidden;
+        padding-left: 10px;
+        padding-right: 10px;
+        box-sizing: border-box;
+    }
+
+    .rb-card {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
+        overflow: hidden;
+    }
+
+    .rb-actions {
+        display: grid !important;
+        grid-template-columns: 1fr !important;
+        align-items: stretch !important;
+        gap: 10px !important;
+    }
+
+    .rb-action {
+        display: block !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        flex: none !important;
+    }
+
+    .rb-table-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+        width: 100%;
+        max-width: 100%;
+    }
+
+    .rb-table-toolbar > * {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        box-sizing: border-box;
+    }
+
+    .rb-table-toolbar .rb-btn.rb-pill,
+    .rb-check-label,
+    .rb-btn.rb-pill {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        white-space: normal;
+    }
+
+    .rb-table-toolbar input[type="text"] {
+        height: auto !important;
+        min-height: clamp(2.6rem, 7vw, 3rem) !important;
+        padding: 0.7rem 0.9rem !important;
+        line-height: 1.2 !important;
+        font-size: clamp(0.95rem, 3.2vw, 1rem) !important;
+    }
+
+    .rb-table-toolbar .rb-btn.rb-pill,
+    .rb-check-label,
+    .rb-btn.rb-pill {
+        min-height: clamp(2.6rem, 7vw, 3rem) !important;
+        height: auto !important;
+        padding: 0.7rem 0.9rem !important;
+        font-size: clamp(0.95rem, 3.2vw, 1rem) !important;
+    }
+
+    .rb-table-toolbar .rb-copy-btn {
+        width: 44px !important;
+        min-width: 44px !important;
+        max-width: 44px !important;
+        align-self: flex-start;
+    }
+
+    .rb-card .dash-table-container,
+    .rb-card .dash-spreadsheet-container,
+    .rb-card .dash-spreadsheet-inner,
+    .rb-card .dash-table-container .row,
+    .rb-card .dash-table-container .cell {
+        max-width: 100% !important;
+    }
+
+    .rb-card .dash-table-container {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        box-sizing: border-box;
+    }
+
+    .rb-card .dash-spreadsheet-container table {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        table-layout: fixed !important;
+    }
+
+    .rb-card .dash-header,
+    .rb-card .dash-cell {
+        font-size: clamp(0.68rem, 2.35vw, 0.8rem) !important;
+        padding: 0.22rem 0.24rem !important;
+        white-space: normal !important;
+        word-break: break-word !important;
+        overflow-wrap: anywhere !important;
+        line-height: 1.1 !important;
+    }
+
+    .rb-card .dash-cell-value,
+    .rb-card .column-header-name {
+        white-space: normal !important;
+        word-break: break-word !important;
+        overflow-wrap: anywhere !important;
+        line-height: 1.1 !important;
+    }
+
+    .rb-card .dash-spreadsheet-inner td,
+    .rb-card .dash-spreadsheet-inner th {
+        min-width: 0 !important;
+        max-width: 0 !important;
+    }
+
+    .rb-card .dash-spreadsheet-inner {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+    }
+
+    .rb-card .dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner table th:first-child,
+    .rb-card .dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner table td:first-child {
+        width: 52% !important;
+    }
+
+    .rb-card .dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner table th:nth-child(2),
+    .rb-card .dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner table td:nth-child(2) {
+        width: 48% !important;
+    }
+
+    .rb-info::after {
+        width: min(260px, calc(100vw - 48px));
+        right: 0;
+    }
+}

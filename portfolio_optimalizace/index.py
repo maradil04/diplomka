@@ -1,6 +1,9 @@
+import base64
+
 from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 
 from app import app
+from backend.services.report_service import generate_portfolio_report_pdf
 from backend.services.portfolio_service import (
     create_user_portfolio,
     delete_user_portfolio,
@@ -25,6 +28,7 @@ app.layout = html.Div(
         dcc.Store(id="portfolio-list-store", storage_type="session"),
         dcc.Store(id="active-portfolio-store", storage_type="session"),
         dcc.Store(id="ui-store", storage_type="session", data={"portfolio_sidebar_open": False, "menu_sidebar_open": False}),
+        dcc.Download(id="portfolio-report-download"),
         dcc.Interval(id="auth-bootstrap", interval=0, n_intervals=0, max_intervals=1),
         dcc.Interval(id="active-portfolio-bootstrap", interval=0, n_intervals=0, max_intervals=1),
         html.Div(id="route-guard-anchor", style={"display": "none"}),
@@ -250,6 +254,51 @@ def create_portfolio_from_sidebar(n_clicks, portfolio_name, auth_data):
     portfolios = list_user_portfolios(user["id"])
     status = f"Created portfolio: {portfolio['name']}"
     return portfolios, {"portfolio_id": portfolio["id"]}, "", status
+
+
+@app.callback(
+    Output("portfolio-report-download", "data"),
+    Output("report-status", "children"),
+    Input("download-portfolio-report", "n_clicks"),
+    State("active-portfolio-store", "data"),
+    State("vyber-datum", "date"),
+    prevent_initial_call=True,
+    running=[
+        (
+            Output("report-progress-wrapper", "style"),
+            {"display": "block"},
+            {"display": "none"},
+        ),
+    ],
+)
+def export_portfolio_report(n_clicks, active_portfolio_data, selected_date):
+    if not n_clicks:
+        return no_update, no_update
+
+    user = get_current_user()
+    portfolio_id = _portfolio_id_from_state(active_portfolio_data)
+    if not user:
+        return no_update, "Authentication required."
+    if not portfolio_id:
+        return no_update, "No active portfolio selected."
+
+    try:
+        pdf_bytes, filename = generate_portfolio_report_pdf(
+            user_id=user["id"],
+            portfolio_id=portfolio_id,
+            report_date=selected_date,
+        )
+        return (
+            {
+                "content": base64.b64encode(pdf_bytes).decode("ascii"),
+                "filename": filename,
+                "type": "application/pdf",
+                "base64": True,
+            },
+            f"PDF report generated: {filename}",
+        )
+    except Exception as exc:
+        return no_update, f"PDF export failed: {exc}"
 
 
 @app.callback(

@@ -124,6 +124,50 @@ def prices_to_returns(df_prices: pd.DataFrame) -> pd.DataFrame:
 
     return rets
 
+def prices_to_returns(df_prices: pd.DataFrame) -> pd.DataFrame:
+    """
+    Normalize market prices into a wide daily returns dataframe.
+    Supports both long and wide input, and prefers adjusted_close when available.
+    """
+    dfp = df_prices.copy()
+
+    date_col = next((c for c in ["Date", "date", "DATUM", "datum"] if c in dfp.columns), None)
+    if date_col is None:
+        raise ValueError("df_prices musi obsahovat sloupec Date/date.")
+
+    dfp[date_col] = pd.to_datetime(dfp[date_col], errors="coerce")
+    dfp = dfp.dropna(subset=[date_col])
+
+    has_ticker = any(str(c).lower() == "ticker" for c in dfp.columns)
+    if has_ticker:
+        ticker_col = next(c for c in dfp.columns if str(c).lower() == "ticker")
+        price_col = next(
+            (
+                c
+                for c in ["adjusted_close", "Adj Close", "adj_close", "Close", "close", "Price", "price"]
+                if c in dfp.columns
+            ),
+            None,
+        )
+        if price_col is None:
+            raise ValueError("Long df_prices musi mit adjusted_close, Close, Adj Close nebo Price.")
+
+        wide_prices = (
+            dfp.sort_values([date_col, ticker_col])
+            .pivot(index=date_col, columns=ticker_col, values=price_col)
+        )
+    else:
+        cols = [c for c in dfp.columns if c != date_col]
+        if not cols:
+            raise ValueError("Wide df_prices nema zadne ticker sloupce.")
+        wide_prices = dfp.sort_values(date_col).set_index(date_col)[cols]
+
+    rets = wide_prices.pct_change().dropna(how="all")
+    rets = rets.dropna(axis=1, thresh=max(5, int(0.7 * len(rets))))
+    rets = rets.dropna()
+    return rets
+
+
 def mean_variance_optimize(mu, Sigma, lam=5.0, long_only=True):
     """
     mu: (n,) expected returns

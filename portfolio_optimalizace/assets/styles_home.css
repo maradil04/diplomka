@@ -51,6 +51,62 @@ body {
     letter-spacing: 0.08em;
 }
 
+.sidebar-import-details {
+    width: 100%;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.04);
+    overflow: hidden;
+}
+
+.sidebar-import-summary {
+    cursor: pointer;
+    list-style: none;
+    padding: 12px 14px;
+    font-weight: 700;
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.sidebar-import-summary::-webkit-details-marker {
+    display: none;
+}
+
+.sidebar-import-panel {
+    padding: 0 14px 14px 14px;
+}
+
+.report-progress-wrapper {
+    display: none;
+    margin-top: 8px;
+    width: 100%;
+    height: 8px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.report-progress-bar {
+    width: 40%;
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #00a17b, #7ef0c9, #00a17b);
+    background-size: 200% 100%;
+    animation: report-progress-slide 1.2s linear infinite;
+}
+
+@keyframes report-progress-slide {
+    0% {
+        transform: translateX(-120%);
+        background-position: 0% 50%;
+    }
+
+    100% {
+        transform: translateX(280%);
+        background-position: 100% 50%;
+    }
+}
+
 .row-container {
     display: flex;
     flex-direction: row;

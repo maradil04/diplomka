@@ -402,25 +402,18 @@ def vypocitat_nevyuzity_kapital(target_date, df):
     df = df.copy()
     df["Date"] = pd.to_datetime(df["Date"], errors="coerce", utc=True).dt.tz_convert(None)
     df = df[df["Date"] <= target_date]
-    df["Total_clean"] = (
-        df["Total Amount"]
-        .astype(str)
-        .str.replace("€", "", regex=False)
-        .str.replace(",", "", regex=False)
-        .astype(float)
-    )
-    volny_kapital = 0.0
-    for _, row in df.iterrows():
-        typ = row["Type"]
-        castka = row["Total_clean"]
-        if typ == "CASH TOP-UP":
-            volny_kapital += castka
-        elif typ in ["BUY - MARKET"]:
-            volny_kapital -= castka
-        elif typ in ["DIVIDEND", "SELL - MARKET", "ROBO MANAGEMENT FEE", "CASH WITHDRAWAL"]:
-            volny_kapital += castka
+    df["Total_clean"] = _parse_money_series(df["Total Amount"]).fillna(0.0).abs()
+    type_series = df["Type"].fillna("").astype(str)
 
-    return round(volny_kapital, 2)
+    cash_topup = df.loc[type_series.eq("CASH TOP-UP"), "Total_clean"].sum()
+    cash_withdrawal = df.loc[type_series.eq("CASH WITHDRAWAL"), "Total_clean"].sum()
+    buys = df.loc[type_series.eq("BUY - MARKET"), "Total_clean"].sum()
+    sells = df.loc[type_series.eq("SELL - MARKET"), "Total_clean"].sum()
+    fees = df.loc[type_series.str.contains("FEE", na=False), "Total_clean"].sum()
+    dividends = df.loc[type_series.str.contains("DIVIDEND", na=False), "Total_clean"].sum()
+
+    estimated_free_cash = cash_topup - cash_withdrawal - buys + sells - fees + dividends
+    return round(float(estimated_free_cash), 2)
 
 def hodnota_portfolia_v_case_tabulka(target_date, df, df_prices):
     td = pd.to_datetime(target_date, errors="coerce", utc=True)
@@ -1578,7 +1571,7 @@ def upload_and_store(contents, filename, active_portfolio_data):
         return dash.no_update, dash.no_update, "No active portfolio selected."
 
     try:
-        df_uploaded = parse_upload_contents(contents)
+        df_uploaded = parse_upload_contents(contents, filename=filename)
         market_data_summary = ensure_market_data_for_portfolio_dataframe(df_uploaded)
         import_transactions_dataframe(
             portfolio_id=portfolio_id,
@@ -1595,13 +1588,16 @@ def upload_and_store(contents, filename, active_portfolio_data):
         overlap_end = market_data_summary.get("overlap_end")
         if overlap_start and overlap_end:
             status_parts.append(f"Price overlap window: {overlap_start} to {overlap_end}.")
+        import_warnings = df_uploaded.attrs.get("import_warnings") or []
+        if import_warnings:
+            status_parts.append("Autocorrections: " + " ".join(import_warnings))
         return (
             portfolios,
             {"portfolio_id": portfolio_id},
             " ".join(status_parts),
         )
     except Exception as exc:
-        return dash.no_update, dash.no_update, f"Upload failed: {exc}"
+        return dash.no_update, dash.no_update, f"Upload failed. {exc}"
 
 
 @app.callback(

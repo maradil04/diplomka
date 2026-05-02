@@ -83,16 +83,82 @@ def build_portfolio_sidebar(portfolios, active_portfolio_id, is_open):
                     html.Div(
                         style={"marginTop": "12px"},
                         children=[
-                            dcc.Upload(
-                                id="upload-data",
-                                children=html.Button("Nahrat CSV", className="upload-button sidebar-upload-button", style={"width": "100%"}),
-                                multiple=False,
+                            html.Details(
+                                className="sidebar-import-details",
+                                children=[
+                                    html.Summary("Import CSV", className="sidebar-import-summary"),
+                                    html.Div(
+                                        className="sidebar-import-panel",
+                                        children=[
+                                            html.P(
+                                                "Upload a CSV with these columns in the header:",
+                                                style={"marginTop": "12px", "marginBottom": "8px"},
+                                            ),
+                                            html.Code(
+                                                "Date, Ticker, Type, Quantity, Price per share, Total Amount, Currency, FX Rate",
+                                                style={
+                                                    "display": "block",
+                                                    "whiteSpace": "normal",
+                                                    "padding": "10px 12px",
+                                                    "background": "rgba(255,255,255,0.06)",
+                                                    "border": "1px solid rgba(255,255,255,0.12)",
+                                                    "borderRadius": "8px",
+                                                },
+                                            ),
+                                            html.P(
+                                                "Required values: Date, Type, Total Amount, Currency. Buy and Sell rows must also contain Ticker and Quantity.",
+                                                style={"marginTop": "10px", "marginBottom": "8px", "fontSize": "13px", "opacity": "0.9"},
+                                            ),
+                                            html.P(
+                                                "Accepted Type values: BUY - MARKET, SELL - MARKET, CASH TOP-UP, CASH WITHDRAWAL, ROBO MANAGEMENT FEE, DIVIDEND.",
+                                                style={"marginTop": "0", "marginBottom": "8px", "fontSize": "13px", "opacity": "0.9"},
+                                            ),
+                                            html.P(
+                                                "The importer can auto-fix capitalization and common column-name variants, but it will reject files with missing required information.",
+                                                style={"marginTop": "0", "marginBottom": "12px", "fontSize": "13px", "opacity": "0.9"},
+                                            ),
+                                            dcc.Upload(
+                                                id="upload-data",
+                                                accept=".csv,text/csv",
+                                                children=html.Button(
+                                                    "Vybrat CSV soubor",
+                                                    className="upload-button sidebar-upload-button",
+                                                    style={"width": "100%"},
+                                                ),
+                                                multiple=False,
+                                            ),
+                                        ],
+                                    ),
+                                ],
                             )
                         ],
                     ),
                     html.Div(
                         id="upload-status",
                         style={"marginTop": "10px", "fontSize": "14px", "opacity": "0.85"},
+                    ),
+                    html.Div(
+                        style={"marginTop": "12px"},
+                        children=[
+                            html.Button(
+                                "Export PDF report",
+                                id="download-portfolio-report",
+                                n_clicks=0,
+                                className="sidebar-create-button",
+                                style={"width": "100%"},
+                            )
+                        ],
+                    ),
+                    html.Div(
+                        id="report-status",
+                        style={"marginTop": "10px", "fontSize": "14px", "opacity": "0.85"},
+                    ),
+                    html.Div(
+                        id="report-progress-wrapper",
+                        className="report-progress-wrapper",
+                        children=[
+                            html.Div(id="report-progress-bar", className="report-progress-bar"),
+                        ],
                     ),
                     html.Div(
                         className="sidebar-create-row",
