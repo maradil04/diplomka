@@ -30,3 +30,7 @@ configure_session(server)
 init_db()
 register_auth_routes(server)
 register_route_guards(server)
+
+if __name__ == "__main__":
+    import index  # noqa: F401,E402
+    app.run(debug=True)
