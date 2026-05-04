@@ -30,6 +30,7 @@ from backend.services.market_data_service import load_market_data
 from backend.services.portfolio_service import empty_transactions_dataframe, load_portfolio_transactions_dataframe, parse_money_series
 from backend.session import get_current_user
 from utils.portfolio_history import build_portfolio_value_history, portfolio_tickers
+from utils.i18n import normalize_language, t
 
 import numpy as np
 import pandas as pd
@@ -719,26 +720,28 @@ def update_ticker_dropdown(pathname, active_portfolio_data):
     Output("portfolio-arima2", "children"),
     Input("run-portfolio-prediction", "n_clicks"),
     Input("active-portfolio-store", "data"),
+    Input("language-store", "data"),
     prevent_initial_call=True,
 )
-def portfolio_mean_plus_volatility_forecast(n_clicks, active_portfolio_data):
-    if ctx.triggered_id != "run-portfolio-prediction" or not n_clicks:
-        return no_update
+def portfolio_mean_plus_volatility_forecast(n_clicks, active_portfolio_data, language):
+    lang = normalize_language(language)
+    if not n_clicks:
+        return html.Div([html.H3(t(lang, "pred.portfolio_header")), html.P(t(lang, "pred.click_to_run"))])
     try:
         df_local = _get_current_portfolio_df(active_portfolio_data)
 
         if df_local.empty or "Ticker" not in df_local.columns:
-            return html.Div([html.H3("Predikce - Portfolio"), html.P("V uploadovanem souboru chybi data portfolia.")])
+            return html.Div([html.H3(t(lang, "pred.portfolio_header")), html.P(t(lang, "pred.missing_portfolio_data"))])
 
         tickers_clean = df_local["Ticker"].astype(str).str.split(".").str[0].dropna().unique().tolist()
         prices_filtered = _get_portfolio_prices(df_local)
         prices_filtered = prices_filtered[prices_filtered["Ticker_clean"].isin(tickers_clean)].copy()
         if prices_filtered.empty:
-            return html.Div([html.H3("Predikce - Portfolio"), html.P("Nenalezena cenova data pro tickery z portfolia.")])
+            return html.Div([html.H3(t(lang, "pred.portfolio_header")), html.P(t(lang, "pred.missing_price_data"))])
 
         portfolio_twr = build_portfolio_twr_index(df_local, prices_filtered, base=100.0)
         if portfolio_twr.empty or "twr_index" not in portfolio_twr.columns:
-            return html.Div([html.H3("Predikce - Portfolio"), html.P("Nedostatek dat pro vypocet cash-flow-adjusted vykonnosti portfolia.")])
+            return html.Div([html.H3(t(lang, "pred.portfolio_header")), html.P(t(lang, "pred.insufficient_cf_data"))])
 
         performance_series = (
             portfolio_twr[["date", "twr_index"]]
@@ -767,21 +770,21 @@ def portfolio_mean_plus_volatility_forecast(n_clicks, active_portfolio_data):
         if len(performance_series) < min_obs:
             hist = pd.DataFrame({"date": performance_series.index, "adjusted_close": performance_series.values})
             return html.Div([
-                html.H3(f"Predikce - {ticker}"),
-                html.P(f"Malo cash-flow-adjusted pozorovani ({len(performance_series)}), minimum je {min_obs}."),
-                dcc.Graph(figure=px.line(hist, x="date", y="adjusted_close", title=f"Cash-flow-adjusted historie - {ticker}"))
+                html.H3(t(lang, "pred.portfolio_header")),
+                html.P(t(lang, "pred.too_few_cf_obs", count=len(performance_series), minimum=min_obs)),
+                dcc.Graph(figure=px.line(hist, x="date", y="adjusted_close", title=t(lang, "pred.cf_history", ticker=ticker)))
             ])
 
         log_ret = np.log(performance_series).diff().dropna()
         if len(log_ret) < min_obs:
             return html.Div([
-                html.H3(f"Predikce - {ticker}"),
-                html.P(f"Malo returnu ({len(log_ret)}), minimum je {min_obs}."),
+                html.H3(t(lang, "pred.portfolio_header")),
+                html.P(t(lang, "pred.too_few_returns", count=len(log_ret), minimum=min_obs)),
             ])
 
         mean_model, mean_label, mean_rmse, season_period = pick_mean_model_rmse(log_ret)
         if mean_model is None:
-            return html.Div([html.H3(f"Predikce - {ticker}"), html.P("Nepodarilo se najit stabilni ARIMA model.")])
+            return html.Div([html.H3(t(lang, "pred.portfolio_header")), html.P(t(lang, "pred.no_stable_arima"))])
 
         future_index = make_future_index(performance_series.index, forecast_steps)
         future_mean_lr = pd.Series(mean_model.forecast(steps=forecast_steps).values, index=future_index, name="mu_lr")
@@ -813,12 +816,12 @@ def portfolio_mean_plus_volatility_forecast(n_clicks, active_portfolio_data):
         lower2, upper2 = lower2_index * scale, upper2_index * scale
 
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=current_value_series.index, y=current_value_series.values, mode="lines", name=f"{ticker} - historie", line=dict(width=2, color=HISTORY_COLOR)))
-        fig.add_trace(go.Scatter(x=price_pred.index, y=price_pred.values, mode="lines", name=f"{ticker} - predikce (mean)", line=dict(width=2, dash="dot", color=PREDICTION_COLOR)))
+        fig.add_trace(go.Scatter(x=current_value_series.index, y=current_value_series.values, mode="lines", name=t(lang, "pred.history", ticker=ticker), line=dict(width=2, color=HISTORY_COLOR)))
+        fig.add_trace(go.Scatter(x=price_pred.index, y=price_pred.values, mode="lines", name=t(lang, "pred.forecast_mean", ticker=ticker), line=dict(width=2, dash="dot", color=PREDICTION_COLOR)))
         fig.add_trace(go.Scatter(x=upper2.index, y=upper2.values, mode="lines", line=dict(width=0, color=VOLATILITY_COLOR), name="+2sigma", showlegend=False))
         fig.add_trace(go.Scatter(x=lower2.index, y=lower2.values, mode="lines", line=dict(width=0, color=VOLATILITY_COLOR), name="-2sigma", fill="tonexty", fillcolor=VOLATILITY_FILL_SOFT, showlegend=True))
         fig.add_trace(go.Scatter(x=upper1.index, y=upper1.values, mode="lines", line=dict(width=0, color=VOLATILITY_COLOR), name="+1sigma", showlegend=False))
-        fig.add_trace(go.Scatter(x=lower1.index, y=lower1.values, mode="lines", line=dict(width=0, color=VOLATILITY_COLOR), name="Volatilni pasmo +/-1sigma", fill="tonexty", fillcolor=VOLATILITY_FILL_STRONG, showlegend=True))
+        fig.add_trace(go.Scatter(x=lower1.index, y=lower1.values, mode="lines", line=dict(width=0, color=VOLATILITY_COLOR), name=t(lang, "pred.volatility_band"), fill="tonexty", fillcolor=VOLATILITY_FILL_STRONG, showlegend=True))
 
         extra = f"{mean_label} on cash-flow-adjusted returns (RMSE={mean_rmse:.4f})"
         extra += f" | ARCH p={arch_p:.4g} -> {garch_label}"
@@ -840,27 +843,29 @@ def portfolio_mean_plus_volatility_forecast(n_clicks, active_portfolio_data):
             plot_bgcolor="#303030",
             height=550,
             margin=dict(t=50, b=40, l=40, r=40),
-            title=dict(text=f"{ticker}: predikce ceny + volatilni pasmo | {extra}", y=1, x=0.5, xanchor="center", yanchor="top", font=dict(size=20, color="white", family="Arial")),
-            xaxis=dict(title=dict(text="Datum", font=dict(size=16, color="white", family="Arial")), tickfont=dict(color="white", family="Arial"), showgrid=True, gridcolor="rgba(255,255,255,0.1)", gridwidth=1),
-            yaxis=dict(title=dict(text="Cena", font=dict(size=16, color="white", family="Arial")), tickfont=dict(color="white", family="Arial"), showgrid=True, gridcolor="rgba(255,255,255,0.1)", gridwidth=1, rangemode="tozero"),
+            title=dict(text=t(lang, "pred.portfolio_chart_title", ticker=ticker, extra=extra), y=1, x=0.5, xanchor="center", yanchor="top", font=dict(size=20, color="white", family="Arial")),
+            xaxis=dict(title=dict(text=t(lang, "pred.date"), font=dict(size=16, color="white", family="Arial")), tickfont=dict(color="white", family="Arial"), showgrid=True, gridcolor="rgba(255,255,255,0.1)", gridwidth=1),
+            yaxis=dict(title=dict(text=t(lang, "pred.price"), font=dict(size=16, color="white", family="Arial")), tickfont=dict(color="white", family="Arial"), showgrid=True, gridcolor="rgba(255,255,255,0.1)", gridwidth=1, rangemode="tozero"),
         )
 
         return html.Div([dcc.Graph(figure=fig)])
     except Exception as e:
         return html.Div([
-            html.H3("Predikce - Portfolio"),
-            html.P(f"Predikce selhala: {e}"),
+            html.H3(t(lang, "pred.portfolio_header")),
+            html.P(t(lang, "pred.prediction_failed", error=str(e))),
         ])
 ################################################x
 @app.callback(
     Output("arima2", "children"),
     Input("ticker_pred", "value"),
+    Input("language-store", "data"),
 )
-def mean_plus_volatility_forecast(ticker):
+def mean_plus_volatility_forecast(ticker, language):
+    lang = normalize_language(language)
     if ticker is None:
         return html.Div([
-            html.H3("Predikce ceny + volatilní pásmo"),
-            html.P("Vyberte akcii v dropdownu.")
+            html.H3(t(lang, "pred.price_band_header")),
+            html.P(t(lang, "pred.select_stock"))
         ])
     try:
         forecast_steps = 30
@@ -869,7 +874,7 @@ def mean_plus_volatility_forecast(ticker):
         df_t = load_market_data(tickers=[ticker], use_cache=False).copy()
         df_t = df_t[df_t["Ticker_clean"] == ticker].copy()
         if df_t.empty:
-            return html.Div([html.P(f"Žádná data pro {ticker}.")])
+            return html.Div([html.P(t(lang, "pred.no_data_for", ticker=ticker))])
 
         df_t["date"] = pd.to_datetime(df_t["date"], errors="coerce")
         df_t = df_t.dropna(subset=["date"]).sort_values("date")
@@ -881,24 +886,24 @@ def mean_plus_volatility_forecast(ticker):
 
         if len(price_series) < min_obs:
             return html.Div([
-                html.H3(f"Predikce – {ticker}"),
-                html.P(f"Málo cenových pozorování ({len(price_series)}), minimum je {min_obs}."),
-                dcc.Graph(figure=px.line(df_t, x="date", y="adjusted_close", title=f"Historie ceny – {ticker}"))
+                html.H3(f"{t(lang, 'pred.portfolio_header')} – {ticker}"),
+                html.P(t(lang, "pred.too_few_price_obs", count=len(price_series), minimum=min_obs)),
+                dcc.Graph(figure=px.line(df_t, x="date", y="adjusted_close", title=t(lang, "pred.price_history", ticker=ticker)))
             ])
 
         log_ret = np.log(price_series).diff().dropna()
 
         if len(log_ret) < min_obs:
             return html.Div([
-                html.H3(f"Predikce – {ticker}"),
-                html.P(f"Málo returnů ({len(log_ret)}), minimum je {min_obs}."),
+                html.H3(f"{t(lang, 'pred.portfolio_header')} – {ticker}"),
+                html.P(t(lang, "pred.too_few_returns", count=len(log_ret), minimum=min_obs)),
             ])
 
         mean_model, mean_label, mean_rmse, season_period = pick_mean_model_rmse(log_ret)
         if mean_model is None:
             return html.Div([
-                html.H3(f"Predikce – {ticker}"),
-                html.P("Nepodařilo se najít stabilní ARIMA model.")
+                html.H3(f"{t(lang, 'pred.portfolio_header')} – {ticker}"),
+                html.P(t(lang, "pred.no_stable_arima"))
             ])
 
         future_index = make_future_index(price_series.index, forecast_steps)
@@ -933,14 +938,14 @@ def mean_plus_volatility_forecast(ticker):
             x=price_series.index,
             y=price_series.values,
             mode="lines",
-            name=f"{ticker} – historie",
+            name=t(lang, "pred.history", ticker=ticker),
             line=dict(width=2, color=HISTORY_COLOR),
         ))
         fig.add_trace(go.Scatter(
             x=price_pred.index,
             y=price_pred.values,
             mode="lines",
-            name=f"{ticker} – predikce (mean)",
+            name=t(lang, "pred.forecast_mean", ticker=ticker),
             line=dict(width=2, dash="dot", color=PREDICTION_COLOR),
         ))
         fig.add_trace(go.Scatter(
@@ -974,7 +979,7 @@ def mean_plus_volatility_forecast(ticker):
             y=lower1.values,
             mode="lines",
             line=dict(width=0, color=VOLATILITY_COLOR),
-            name="Volatilní pásmo ±1σ",
+            name=t(lang, "pred.volatility_band"),
             fill="tonexty",
             fillcolor=VOLATILITY_FILL_STRONG,
             showlegend=True,
@@ -1001,17 +1006,17 @@ def mean_plus_volatility_forecast(ticker):
             height=550,
             margin=dict(t=50, b=40, l=40, r=40),
             title=dict(
-                text=f"{ticker}: predikce ceny + volatilní pásmo | {extra}",
+                text=t(lang, "pred.price_chart_title", ticker=ticker, extra=extra),
                 y=1, x=0.5, xanchor="center", yanchor="top",
                 font=dict(size=20, color="white", family="Arial"),
             ),
             xaxis=dict(
-                title=dict(text="Datum", font=dict(size=16, color="white", family="Arial")),
+                title=dict(text=t(lang, "pred.date"), font=dict(size=16, color="white", family="Arial")),
                 tickfont=dict(color="white", family="Arial"),
                 showgrid=True, gridcolor="rgba(255,255,255,0.1)", gridwidth=1
             ),
             yaxis=dict(
-                title=dict(text="Cena", font=dict(size=16, color="white", family="Arial")),
+                title=dict(text=t(lang, "pred.price"), font=dict(size=16, color="white", family="Arial")),
                 tickfont=dict(color="white", family="Arial"),
                 showgrid=True, gridcolor="rgba(255,255,255,0.1)", gridwidth=1,
                 rangemode="tozero"
@@ -1023,8 +1028,8 @@ def mean_plus_volatility_forecast(ticker):
         ])
     except Exception as e:
         return html.Div([
-            html.H3(f"Predikce – {ticker}"),
-            html.P(f"Predikce selhala: {e}"),
+            html.H3(f"{t(lang, 'pred.portfolio_header')} – {ticker}"),
+            html.P(t(lang, "pred.prediction_failed", error=str(e))),
         ])
 
 
@@ -1035,13 +1040,34 @@ def mean_plus_volatility_forecast(ticker):
 
 
 
+@app.callback(
+    Output("pred-page-title", "children"),
+    Output("pred-portfolio-title", "children"),
+    Output("run-portfolio-prediction", "children"),
+    Output("pred-portfolio-placeholder-title", "children"),
+    Output("pred-portfolio-placeholder-text", "children"),
+    Output("pred-asset-title", "children"),
+    Input("language-store", "data"),
+)
+def localize_prediction_static_text(language):
+    lang = normalize_language(language)
+    return (
+        t(lang, "pred.page_title"),
+        t(lang, "pred.portfolio_title"),
+        t(lang, "pred.run_portfolio"),
+        t(lang, "pred.portfolio_header"),
+        t(lang, "pred.click_to_run"),
+        t(lang, "pred.asset_title"),
+    )
+
+
 layout = html.Div([
 
-    html.H1("Predikce jednotlivých aktiv a portfolia", className = "nadpis_predikce"),
+    html.H1("Predikce jednotlivých aktiv a portfolia", id="pred-page-title", className = "nadpis_predikce"),
     html.Div(
         className="dropdown-graph-wrapper",
         children=[
-            html.H2("ARIMA predikce celeho portfolia:"),
+            html.H2("ARIMA predikce celeho portfolia:", id="pred-portfolio-title"),
             html.Div(
                 style={"display": "flex", "justifyContent": "center", "marginBottom": "16px"},
                 children=[
@@ -1063,8 +1089,8 @@ layout = html.Div([
                     className="graph",
                     children=html.Div(
                         [
-                            html.H3("Predikce - Portfolio"),
-                            html.P("Kliknete na tlacitko pro spusteni predikce aktivniho portfolia."),
+                            html.H3("Predikce - Portfolio", id="pred-portfolio-placeholder-title"),
+                            html.P("Kliknete na tlacitko pro spusteni predikce aktivniho portfolia.", id="pred-portfolio-placeholder-text"),
                         ]
                     ),
                 )
@@ -1078,7 +1104,7 @@ layout = html.Div([
     html.Div(
         className="dropdown-graph-wrapper",
         children=[
-            html.H2("ARIMA predikce cen:"),
+            html.H2("ARIMA predikce cen:", id="pred-asset-title"),
 
             dcc.Dropdown(id='ticker_pred', multi=False, className="dropdown"),
             dcc.Dropdown(hodnotici_kriteria, id='kriteria_pred', multi=False,value=hodnotici_kriteria[0], className="dropdown" ),

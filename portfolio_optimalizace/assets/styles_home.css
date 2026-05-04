@@ -1067,3 +1067,67 @@ body {
         font-size: clamp(3.2rem, 11vw, 5.2rem);
     }
 }
+
+.sidebar-language-block {
+    margin-bottom: 18px;
+}
+
+.sidebar-language-label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    opacity: 0.82;
+}
+
+.sidebar-language-dropdown .Select-control,
+.sidebar-language-dropdown .Select-menu-outer,
+.sidebar-language-dropdown .VirtualizedSelectOption {
+    background: #181818;
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.16);
+}
+
+.sidebar-language-dropdown .Select-control {
+    border-radius: 10px;
+    min-height: 42px;
+}
+
+.sidebar-language-dropdown .Select-menu-outer {
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.sidebar-language-dropdown .Select-placeholder,
+.sidebar-language-dropdown .Select-value-label,
+.sidebar-language-dropdown .Select-input > input,
+.sidebar-language-dropdown .Select--single > .Select-control .Select-value,
+.sidebar-language-dropdown .Select.has-value.Select--single > .Select-control .Select-value .Select-value-label {
+    color: #fff !important;
+}
+
+.sidebar-language-dropdown .VirtualizedSelectFocusedOption,
+.sidebar-language-dropdown .VirtualizedSelectSelectedOption {
+    background: #0f5b4a !important;
+    color: #fff !important;
+}
+
+.sidebar-language-dropdown .VirtualizedSelectOption {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.sidebar-language-dropdown .Select-menu-outer .VirtualizedSelectOption:last-child {
+    border-bottom: 0;
+}
+
+.sidebar-language-dropdown .Select-arrow {
+    border-top-color: rgba(255, 255, 255, 0.7);
+}
+
+.sidebar-language-dropdown .is-open .Select-arrow,
+.sidebar-language-dropdown .Select.is-open .Select-arrow {
+    border-bottom-color: rgba(255, 255, 255, 0.7);
+    border-top-color: transparent;
+}

@@ -2,25 +2,27 @@ from dash import dcc, html, page_container
 
 from components.auth_controls import build_auth_controls
 from components.portfolio_sidebar import build_portfolio_sidebar
+from utils.i18n import normalize_language, t
 
 
-def _build_nav_links(authenticated):
+def _build_nav_links(authenticated, language):
     if not authenticated:
         return []
     return [
-        dcc.Link("Dashboard", href="/dashboard", className="shell-nav-link"),
-        dcc.Link("Predikce", href="/predikce", className="shell-nav-link"),
-        dcc.Link("Rebalance", href="/rebalance", className="shell-nav-link"),
+        dcc.Link(t(language, "app.dashboard"), href="/dashboard", className="shell-nav-link"),
+        dcc.Link(t(language, "app.prediction"), href="/predikce", className="shell-nav-link"),
+        dcc.Link(t(language, "app.rebalance"), href="/rebalance", className="shell-nav-link"),
     ]
 
 
-def build_app_shell(*, auth_data, portfolios, active_portfolio_id, ui_data):
+def build_app_shell(*, auth_data, portfolios, active_portfolio_id, ui_data, language="cs"):
+    lang = normalize_language(language)
     authenticated = bool(auth_data and auth_data.get("authenticated"))
     sidebar_open = bool((ui_data or {}).get("portfolio_sidebar_open"))
     menu_open = bool((ui_data or {}).get("menu_sidebar_open"))
 
-    nav_children = _build_nav_links(authenticated)
-    auth_controls = build_auth_controls(auth_data)
+    nav_children = _build_nav_links(authenticated, lang)
+    auth_controls = build_auth_controls(auth_data, lang)
 
     content_style = {
         "paddingRight": "24px",
@@ -55,7 +57,7 @@ def build_app_shell(*, auth_data, portfolios, active_portfolio_id, ui_data):
                     "pointerEvents": "auto",
                     "touchAction": "manipulation",
                 },
-                children=[html.Span("Menu")],
+                children=[html.Span(t(lang, "app.menu"))],
             ),
             html.Div(nav_children, className="shell-nav", style={"display": "flex", "alignItems": "center"}),
             html.Div(
@@ -104,8 +106,8 @@ def build_app_shell(*, auth_data, portfolios, active_portfolio_id, ui_data):
                     html.Div(
                         style={"display": "flex", "justifyContent": "space-between", "alignItems": "center", "marginBottom": "18px"},
                         children=[
-                            html.H3("Menu", style={"margin": 0}),
-                            html.Button("Close", id="menu-close", n_clicks=0, className="portfolio-row-delete", style={"minWidth": "84px"}),
+                            html.H3(t(lang, "app.menu"), style={"margin": 0}),
+                            html.Button(t(lang, "app.close"), id="menu-close", n_clicks=0, className="portfolio-row-delete", style={"minWidth": "84px"}),
                         ],
                     ),
                     html.Div(nav_children, className="mobile-menu-nav"),
@@ -115,7 +117,7 @@ def build_app_shell(*, auth_data, portfolios, active_portfolio_id, ui_data):
         ],
     )
 
-    sidebar = build_portfolio_sidebar(portfolios, active_portfolio_id, sidebar_open)
+    sidebar = build_portfolio_sidebar(portfolios, active_portfolio_id, sidebar_open, lang)
     sidebar_toggle = html.Button(
         id="sidebar-toggle",
         n_clicks=0,
@@ -142,7 +144,7 @@ def build_app_shell(*, auth_data, portfolios, active_portfolio_id, ui_data):
                 id="sidebar-toggle-arrow",
                 style={"fontSize": "20px", "lineHeight": "1", "width": "14px", "textAlign": "center"},
             ),
-            html.Span("Portfolio"),
+            html.Span(t(lang, "app.portfolio")),
         ],
     )
     return html.Div(

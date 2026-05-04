@@ -2,6 +2,8 @@ from datetime import date
 
 from dash import dcc, html
 
+from utils.i18n import language_options, normalize_language, t
+
 
 def _sidebar_style(is_open):
     return {
@@ -24,9 +26,9 @@ def _sidebar_style(is_open):
     }
 
 
-def _portfolio_rows(portfolios, active_portfolio_id):
+def _portfolio_rows(portfolios, active_portfolio_id, language):
     if not portfolios:
-        return [html.Div("No portfolios yet.", className="portfolio-empty")]
+        return [html.Div(t(language, "sidebar.no_portfolios"), className="portfolio-empty")]
 
     rows = []
     for item in portfolios:
@@ -54,7 +56,8 @@ def _portfolio_rows(portfolios, active_portfolio_id):
     return rows
 
 
-def build_portfolio_sidebar(portfolios, active_portfolio_id, is_open):
+def build_portfolio_sidebar(portfolios, active_portfolio_id, is_open, language="cs"):
+    lang = normalize_language(language)
     has_portfolios = bool(portfolios)
 
     return html.Div(
@@ -65,8 +68,22 @@ def build_portfolio_sidebar(portfolios, active_portfolio_id, is_open):
                 id="portfolio-sidebar-content",
                 style={"opacity": "1"},
                 children=[
-                    html.H3("Portfolios"),
-                    html.P("Global portfolio context for dashboard, prediction, and rebalance."),
+                    html.Div(
+                        className="sidebar-language-block",
+                        children=[
+                            html.Label(t(lang, "sidebar.language"), className="sidebar-language-label"),
+                            dcc.Dropdown(
+                                id="language-switch",
+                                options=language_options(lang),
+                                value=lang,
+                                clearable=False,
+                                searchable=False,
+                                className="sidebar-language-dropdown",
+                            ),
+                        ],
+                    ),
+                    html.H3(t(lang, "sidebar.portfolios")),
+                    html.P(t(lang, "sidebar.context")),
                     html.Div(
                         style={"marginTop": "16px"},
                         children=[
@@ -74,7 +91,7 @@ def build_portfolio_sidebar(portfolios, active_portfolio_id, is_open):
                                 id="vyber-datum",
                                 date=date.today(),
                                 display_format="DD.MM.YYYY",
-                                placeholder="Vyber datum",
+                                placeholder=t(lang, "sidebar.select_date"),
                                 className="date-picker sidebar-date-picker",
                                 style={"background": "transparent", "width": "100%"},
                             ),
@@ -86,12 +103,12 @@ def build_portfolio_sidebar(portfolios, active_portfolio_id, is_open):
                             html.Details(
                                 className="sidebar-import-details",
                                 children=[
-                                    html.Summary("Import CSV", className="sidebar-import-summary"),
+                                    html.Summary(t(lang, "sidebar.import_csv"), className="sidebar-import-summary"),
                                     html.Div(
                                         className="sidebar-import-panel",
                                         children=[
                                             html.P(
-                                                "Upload a CSV with these columns in the header:",
+                                                t(lang, "sidebar.import_header"),
                                                 style={"marginTop": "12px", "marginBottom": "8px"},
                                             ),
                                             html.Code(
@@ -106,22 +123,22 @@ def build_portfolio_sidebar(portfolios, active_portfolio_id, is_open):
                                                 },
                                             ),
                                             html.P(
-                                                "Required values: Date, Type, Total Amount, Currency. Buy and Sell rows must also contain Ticker and Quantity.",
+                                                t(lang, "sidebar.import_required"),
                                                 style={"marginTop": "10px", "marginBottom": "8px", "fontSize": "13px", "opacity": "0.9"},
                                             ),
                                             html.P(
-                                                "Accepted Type values: BUY - MARKET, SELL - MARKET, CASH TOP-UP, CASH WITHDRAWAL, ROBO MANAGEMENT FEE, DIVIDEND.",
+                                                t(lang, "sidebar.import_types"),
                                                 style={"marginTop": "0", "marginBottom": "8px", "fontSize": "13px", "opacity": "0.9"},
                                             ),
                                             html.P(
-                                                "The importer can auto-fix capitalization and common column-name variants, but it will reject files with missing required information.",
+                                                t(lang, "sidebar.import_note"),
                                                 style={"marginTop": "0", "marginBottom": "12px", "fontSize": "13px", "opacity": "0.9"},
                                             ),
                                             dcc.Upload(
                                                 id="upload-data",
                                                 accept=".csv,text/csv",
                                                 children=html.Button(
-                                                    "Vybrat CSV soubor",
+                                                    t(lang, "sidebar.choose_csv"),
                                                     className="upload-button sidebar-upload-button",
                                                     style={"width": "100%"},
                                                 ),
@@ -141,7 +158,7 @@ def build_portfolio_sidebar(portfolios, active_portfolio_id, is_open):
                         style={"marginTop": "12px"},
                         children=[
                             html.Button(
-                                "Export PDF report",
+                                t(lang, "sidebar.export_pdf"),
                                 id="download-portfolio-report",
                                 n_clicks=0,
                                 className="sidebar-create-button",
@@ -166,21 +183,21 @@ def build_portfolio_sidebar(portfolios, active_portfolio_id, is_open):
                             dcc.Input(
                                 id="portfolio-create-name",
                                 type="text",
-                                placeholder="Nazev portfolia",
+                                placeholder=t(lang, "sidebar.portfolio_name"),
                                 className="sidebar-create-input",
                             ),
-                            html.Button("Create", id="portfolio-create-button", n_clicks=0, className="sidebar-create-button"),
+                            html.Button(t(lang, "sidebar.create"), id="portfolio-create-button", n_clicks=0, className="sidebar-create-button"),
                         ],
                     ),
                     html.Div(
                         id="portfolio-list",
                         className="portfolio-list",
-                        children=_portfolio_rows(portfolios, active_portfolio_id),
+                        children=_portfolio_rows(portfolios, active_portfolio_id, lang),
                         style={"marginTop": "16px"},
                     ),
                     html.Div(
                         id="portfolio-sidebar-status",
-                        children="No portfolios yet." if not has_portfolios else "Active portfolio drives all analysis pages.",
+                        children=t(lang, "sidebar.no_portfolios") if not has_portfolios else t(lang, "sidebar.active_hint"),
                         style={"marginTop": "16px", "fontSize": "14px", "opacity": "0.8"},
                     ),
                 ],

@@ -25,6 +25,7 @@ from backend.services.portfolio_service import (
 )
 from backend.session import get_current_user
 from utils.portfolio_history import build_portfolio_value_history, build_position_history, portfolio_tickers
+from utils.i18n import normalize_language, t
 
 register_page(__name__, path="/dashboard")
 #--------------- Načítání dat
@@ -128,6 +129,14 @@ def _format_numeric_display(value, *, decimals=2, suffix="", trim_trailing=False
     return text
 
 
+def _home_frequency_options(language):
+    lang = normalize_language(language)
+    return [
+        {"label": t(lang, "home.frequency.daily"), "value": "Daily"},
+        {"label": t(lang, "home.frequency.monthly"), "value": "Monthly"},
+    ]
+
+
 def _build_dashboard_section(section_id, title, children):
     return html.Div(
         className="dashboard-section",
@@ -137,7 +146,7 @@ def _build_dashboard_section(section_id, title, children):
                 className="dashboard-section-toggle",
                 n_clicks=0,
                 children=[
-                    html.Span(title, className="dashboard-section-title"),
+                    html.Span(title, id=f"dashboard-section-title-{section_id}", className="dashboard-section-title"),
                     html.Span(
                         "▾",
                         id={"type": "dashboard-section-arrow", "index": section_id},
@@ -711,14 +720,16 @@ def _no_data_figure(title=None):
 @app.callback(
     Output("vystup-div", "figure"),
     Input("vyber-datum", "date"),
+    Input("language-store", "data"),
     State("active-portfolio-store", "data")
 )
-def spust_sjednoceni(vybrane_datum, active_portfolio_data):
+def spust_sjednoceni(vybrane_datum, language, active_portfolio_data):
+    lang = normalize_language(language)
     if vybrane_datum is None:
-        return _msg_figure("Vyber datum pro výpočet portfolia.")
+        return _msg_figure(t(lang, "common.select_date_for_calc"))
     df = _get_current_portfolio_df(active_portfolio_data)
     if not _has_transaction_data(df):
-        return _msg_figure("Portfolio has no imported transactions yet.")
+        return _msg_figure(t(lang, "common.no_transactions"))
 
     try:
         
@@ -733,7 +744,7 @@ def spust_sjednoceni(vybrane_datum, active_portfolio_data):
             fig.add_trace(
                 go.Bar(
                     x=[row.Total_value],
-                    y=["Portfolio"],
+                    y=[t(lang, "home.portfolio")],
                     orientation="h",
                     name=str(row.Ticker),
                     marker=dict(color=colors[idx], line=dict(color="rgba(255,255,255,0.14)", width=1)),
@@ -750,7 +761,7 @@ def spust_sjednoceni(vybrane_datum, active_portfolio_data):
             height=500,
             margin=dict(t=40, b=40, l=40, r=40),
             title=dict(
-                text="Alokace aktiv v portfoliu",
+                text=t(lang, "home.allocation_title"),
                 y=1, x=0.5, xanchor='center', yanchor='top',
                 font=dict(size=24, color='white', family='Arial')
             ),
@@ -779,7 +790,7 @@ def spust_sjednoceni(vybrane_datum, active_portfolio_data):
         return fig
 
     except Exception as e:
-        return _msg_figure(f"Chyba: {e}")
+        return _msg_figure(t(lang, "common.error", error=str(e)))
 
 # ---------------------------------------------------------------------------
 # 2) Pasivní příjmy a výdaje
@@ -787,22 +798,24 @@ def spust_sjednoceni(vybrane_datum, active_portfolio_data):
 @app.callback(
     Output("vystup_fee_div", "figure"),
     Input("vyber-datum", "date"),
+    Input("language-store", "data"),
     State("active-portfolio-store", "data")
 )
-def vypocitat_fees_divi(vybrane_datum, active_portfolio_data):
+def vypocitat_fees_divi(vybrane_datum, language, active_portfolio_data):
+    lang = normalize_language(language)
     if vybrane_datum is None:
-        return _msg_figure("Vyber datum pro výpočet portfolia.")
+        return _msg_figure(t(lang, "common.select_date_for_calc"))
     df = _get_current_portfolio_df(active_portfolio_data)
     if not _has_transaction_data(df):
-        return _msg_figure("Portfolio has no imported transactions yet.")
+        return _msg_figure(t(lang, "common.no_transactions"))
 
     try:
         target_date = _to_naive_ts(vybrane_datum)
         result_df = fees_divi(target_date, df)
         if result_df.empty:
-            return _no_data_figure("Pasivní příjmy a výdaje portfolia")
+            return _no_data_figure(t(lang, "home.passive_income_title"))
         if pd.to_numeric(result_df["Total_money"], errors="coerce").fillna(0.0).abs().sum() == 0:
-            return _no_data_figure("Pasivní příjmy a výdaje portfolia")
+            return _no_data_figure(t(lang, "home.passive_income_title"))
 
         result_df = result_df.sort_values("Total_money", ascending=False)
         colors = _green_black_palette(len(result_df))
@@ -814,7 +827,7 @@ def vypocitat_fees_divi(vybrane_datum, active_portfolio_data):
             fig.add_trace(
                 go.Bar(
                     x=[row.Total_money],
-                    y=["Cashflow"],
+                    y=[t(lang, "home.cashflow")],
                     orientation="h",
                     name=str(row.Type),
                     marker=dict(color=colors[idx], line=dict(color="rgba(255,255,255,0.14)", width=1)),
@@ -831,7 +844,7 @@ def vypocitat_fees_divi(vybrane_datum, active_portfolio_data):
             height=500,
             margin=dict(t=40, b=40, l=40, r=40),
             title=dict(
-                text="Pasivní příjmy a výdaje portfolia",
+                text=t(lang, "home.passive_income_title"),
                 y=1, x=0.5, xanchor='center', yanchor='top',
                 font=dict(size=24, color='white', family='Arial')
             ),
@@ -860,7 +873,7 @@ def vypocitat_fees_divi(vybrane_datum, active_portfolio_data):
         return fig
 
     except Exception as e:
-        return _msg_figure(f"Chyba: {e}")
+        return _msg_figure(t(lang, "common.error", error=str(e)))
 
 # ---------------------------------------------------------------------------
 # 3) Souhrnná tabulka portfolia
@@ -868,14 +881,16 @@ def vypocitat_fees_divi(vybrane_datum, active_portfolio_data):
 @app.callback(
     Output("vystup_tabulka_portfolio", "children"),
     Input("vyber-datum", "date"),
+    Input("language-store", "data"),
     State("active-portfolio-store", "data")
 )
-def vypocitat_hlavni_tabulku(vybrane_datum, active_portfolio_data):
+def vypocitat_hlavni_tabulku(vybrane_datum, language, active_portfolio_data):
+    lang = normalize_language(language)
     if vybrane_datum is None:
-        return "Vyber datum pro výpočet portfolia."
+        return t(lang, "common.select_date_for_calc")
     df = _get_current_portfolio_df(active_portfolio_data)
     if not _has_transaction_data(df):
-        return "Portfolio has no imported transactions yet."
+        return t(lang, "common.no_transactions")
     
 
     try:
@@ -909,19 +924,26 @@ def vypocitat_hlavni_tabulku(vybrane_datum, active_portfolio_data):
             "Ticker", "Total_purch_val", "Total_curr_val",
             "Total_quantity", "Avg_purch_price", "Dividenda", "Profit"
         ]]
-        final_df = final_df.rename(columns = {"Ticker":"TICKER","Total_purch_val":"CELKOVÁ KUPNÍ HODNOTA","Total_curr_val":"CELKOVÁ SOUČASNÁ HODNOTA",
-                                               "Total_quantity":"CELKOVÝ POČET","Avg_purch_price":"PRŮMĚRNÁ NÁKUPNÍ CENA","Dividenda":"DIVIDENDA","Profit":"PROFIT" })
+        final_df = final_df.rename(columns={
+            "Ticker": "TICKER",
+            "Total_purch_val": t(lang, "home.purchased_value"),
+            "Total_curr_val": t(lang, "home.current_value"),
+            "Total_quantity": t(lang, "home.total_quantity"),
+            "Avg_purch_price": t(lang, "home.avg_purchase_price"),
+            "Dividenda": t(lang, "home.dividend"),
+            "Profit": t(lang, "home.profit"),
+        })
         display_df = final_df.copy()
         currency_columns = [
-            "CELKOVÁ KUPNÍ HODNOTA",
-            "CELKOVÁ SOUČASNÁ HODNOTA",
-            "PRŮMĚRNÁ NÁKUPNÍ CENA",
-            "DIVIDENDA",
-            "PROFIT",
+            t(lang, "home.purchased_value"),
+            t(lang, "home.current_value"),
+            t(lang, "home.avg_purchase_price"),
+            t(lang, "home.dividend"),
+            t(lang, "home.profit"),
         ]
         for column in currency_columns:
             display_df[column] = display_df[column].apply(lambda value: _format_numeric_display(value, decimals=2, suffix="€"))
-        display_df["CELKOVÝ POČET"] = display_df["CELKOVÝ POČET"].apply(
+        display_df[t(lang, "home.total_quantity")] = display_df[t(lang, "home.total_quantity")].apply(
             lambda value: _format_numeric_display(value, decimals=4, trim_trailing=True)
         )
 
@@ -963,14 +985,16 @@ def vypocitat_hlavni_tabulku(vybrane_datum, active_portfolio_data):
 @app.callback(
     Output("vystup_zaklad_tabulka", "children"),
     Input("vyber-datum", "date"),
+    Input("language-store", "data"),
     State("active-portfolio-store", "data")
 )
-def vypocitat_celkovy_profit(vybrane_datum, active_portfolio_data):
+def vypocitat_celkovy_profit(vybrane_datum, language, active_portfolio_data):
+    lang = normalize_language(language)
     if vybrane_datum is None:
-        return "Vyber datum pro výpočet portfolia."
+        return t(lang, "common.select_date_for_calc")
     df = _get_current_portfolio_df(active_portfolio_data)
     if not _has_transaction_data(df):
-        return "Portfolio has no imported transactions yet."
+        return t(lang, "common.no_transactions")
 
     try:
         target_date = _to_naive_ts(vybrane_datum)
@@ -978,9 +1002,9 @@ def vypocitat_celkovy_profit(vybrane_datum, active_portfolio_data):
         str_roi = f"{metrics['roi']}%"
 
         vystup = pd.DataFrame({
-            "CELKOVÁ HODNOTA PORTFOLIA": [_format_numeric_display(metrics["portfolio_value_total"], decimals=2, suffix="€")],
-            "CELKOVĚ INVESTOVÁNO": [_format_numeric_display(metrics["invested_total"], decimals=2, suffix="€")],
-            "CELKOVÝ VÝNOS PORTFOLIA": [_format_numeric_display(metrics["total_profit"], decimals=2, suffix="€")],
+            t(lang, "home.total_portfolio_value"): [_format_numeric_display(metrics["portfolio_value_total"], decimals=2, suffix="€")],
+            t(lang, "home.total_invested"): [_format_numeric_display(metrics["invested_total"], decimals=2, suffix="€")],
+            t(lang, "home.total_return"): [_format_numeric_display(metrics["total_profit"], decimals=2, suffix="€")],
             "ROI": [str_roi]
         })
 
@@ -1030,22 +1054,24 @@ def vypocitat_celkovy_profit(vybrane_datum, active_portfolio_data):
 @app.callback(
     Output("portfolio-risk-summary", "children"),
     Input("vyber-datum", "date"),
+    Input("language-store", "data"),
     State("active-portfolio-store", "data")
 )
-def vypocitat_portfolio_risk_summary(vybrane_datum, active_portfolio_data):
+def vypocitat_portfolio_risk_summary(vybrane_datum, language, active_portfolio_data):
+    lang = normalize_language(language)
     if vybrane_datum is None:
-        return "Vyber datum pro výpočet portfolia."
+        return t(lang, "common.select_date_for_calc")
     df = _get_current_portfolio_df(active_portfolio_data)
     if not _has_transaction_data(df):
-        return "Portfolio has no imported transactions yet."
+        return t(lang, "common.no_transactions")
     try:
         target_date = _to_naive_ts(vybrane_datum)
         metrics = _resolve_summary_metrics(target_date, df, active_portfolio_data)
         barva = "rgba(217, 74, 74, 0.42)" if metrics["negative_theme"] else "rgba(0, 161, 123, 0.48)"
         risk_df = pd.DataFrame({
-            "ANUALIZOVANÝ VÝNOS": [f"{metrics['annualized_return']}%"],
-            "MAX DRAWDOWN": [f"{metrics['max_drawdown']}%"],
-            "VOLATILITA PORTFOLIA": [f"{metrics['portfolio_volatility']}%"],
+            t(lang, "home.annualized_return"): [f"{metrics['annualized_return']}%"],
+            t(lang, "home.max_drawdown"): [f"{metrics['max_drawdown']}%"],
+            t(lang, "home.portfolio_volatility"): [f"{metrics['portfolio_volatility']}%"],
         })
 
         return dash_table.DataTable(
@@ -1088,14 +1114,16 @@ def vypocitat_portfolio_risk_summary(vybrane_datum, active_portfolio_data):
 @app.callback(
     Output("asset-risk-summary", "children"),
     Input("vyber-datum", "date"),
+    Input("language-store", "data"),
     State("active-portfolio-store", "data")
 )
-def vypocitat_asset_risk_summary(vybrane_datum, active_portfolio_data):
+def vypocitat_asset_risk_summary(vybrane_datum, language, active_portfolio_data):
+    lang = normalize_language(language)
     if vybrane_datum is None:
-        return "Vyber datum pro výpočet portfolia."
+        return t(lang, "common.select_date_for_calc")
     df = _get_current_portfolio_df(active_portfolio_data)
     if not _has_transaction_data(df):
-        return "Portfolio has no imported transactions yet."
+        return t(lang, "common.no_transactions")
     tickers = set(portfolio_tickers(df))
     prices = _get_portfolio_prices(df).query("Ticker_clean in @tickers")
     target_date = _force_naive_scalar(vybrane_datum)
@@ -1125,16 +1153,16 @@ def vypocitat_asset_risk_summary(vybrane_datum, active_portfolio_data):
 
         risk_rows.append({
             "Ticker": ticker,
-            "Volatilita": round(std_return, 6),
+            t(lang, "home.volatility"): round(std_return, 6),
             "Sharpe Ratio": round(sharpe_ratio, 6),
             "Sortino Ratio": round(sortino_ratio, 6),
         })
 
     risk_df = pd.DataFrame(risk_rows).sort_values(by="Ticker") if risk_rows else pd.DataFrame(
-        columns=["Ticker", "Volatilita", "Sharpe Ratio", "Sortino Ratio"]
+        columns=["Ticker", t(lang, "home.volatility"), "Sharpe Ratio", "Sortino Ratio"]
     )
     display_risk_df = risk_df.copy()
-    for column in ["Volatilita", "Sharpe Ratio", "Sortino Ratio"]:
+    for column in [t(lang, "home.volatility"), "Sharpe Ratio", "Sortino Ratio"]:
         if column in display_risk_df.columns:
             display_risk_df[column] = display_risk_df[column].apply(
                 lambda value: _format_numeric_display(value, decimals=6, trim_trailing=True)
@@ -1177,14 +1205,16 @@ def vypocitat_asset_risk_summary(vybrane_datum, active_portfolio_data):
     Output("price-graph", "figure"),
     Input("ticker-dropdown", "value"),
     Input("vyber-start_date", "date"),
+    Input("language-store", "data"),
     State("active-portfolio-store", "data")
 )
-def single_performance_graph(selected_tickers, selected_start_date, active_portfolio_data):
+def single_performance_graph(selected_tickers, selected_start_date, language, active_portfolio_data):
+    lang = normalize_language(language)
     if not selected_tickers:
-        return _msg_figure("Nebyla vybrána žádná aktiva.")
+        return _msg_figure(t(lang, "common.choose_assets"))
     df = _get_current_portfolio_df(active_portfolio_data)
     if not _has_transaction_data(df):
-        return _msg_figure("Portfolio has no imported transactions yet.")
+        return _msg_figure(t(lang, "common.no_transactions"))
     tickers = set(portfolio_tickers(df))
     prices = _get_portfolio_prices(df).query("Ticker_clean in @tickers")
     if selected_start_date is None:
@@ -1203,14 +1233,14 @@ def single_performance_graph(selected_tickers, selected_start_date, active_portf
     fig = px.line(
         normalized_df,
         x="date", y="normalized_price", color="Ticker_clean",
-        labels={"normalized_price": "Indexovaná cena", "Ticker_clean": "Ticker"},
-        title="Relativní vývoj cen (počátek = 100)",
+        labels={"normalized_price": t(lang, "home.indexed_price"), "Ticker_clean": "Ticker"},
+        title=t(lang, "home.relative_prices"),
         color_discrete_sequence=_green_black_palette(max(len(normalized_df["Ticker_clean"].unique()), 1)),
     )
     fig.update_layout(
         showlegend=True,
         legend=dict(
-            title="Aktiva",
+            title=t(lang, "home.assets_legend"),
             orientation="h",
             yanchor="top",
             y=-0.18,
@@ -1223,13 +1253,13 @@ def single_performance_graph(selected_tickers, selected_start_date, active_portf
         plot_bgcolor='#303030',
         height=500,
         margin=dict(t=40, b=40, l=40, r=40),
-        title=dict(text="Relativní vývoj cen aktiv portfolia (počátek = 100)",
+        title=dict(text=t(lang, "home.relative_prices"),
                    y=1, x=0.5, xanchor='center', yanchor='top',
                    font=dict(size=24, color='white', family='Arial')),
-        xaxis=dict(title=dict(text="Datum", font=dict(size=18, color='white', family='Arial')),
+        xaxis=dict(title=dict(text=t(lang, "home.date"), font=dict(size=18, color='white', family='Arial')),
                    tickfont=dict(color='white', family='Arial'),
                    showgrid=True, gridcolor='rgba(255,255,255,0.1)', gridwidth=1),
-        yaxis=dict(title=dict(text="Indexovaná cena", font=dict(size=18, color='white', family='Arial')),
+        yaxis=dict(title=dict(text=t(lang, "home.indexed_price"), font=dict(size=18, color='white', family='Arial')),
                    tickfont=dict(color='white', family='Arial'),
                    showgrid=True, gridcolor='rgba(255,255,255,0.1)', gridwidth=1),
         shapes=[dict(type="line", xref="paper", x0=0, x1=1, yref="y", y0=100, y1=100,
@@ -1256,13 +1286,15 @@ def update_home_ticker_dropdown(_selected_date, active_portfolio_data):
 @app.callback(
     Output("compare_graph", "figure"),
     Input("compare_tickers", "value"),
+    Input("language-store", "data"),
     State("active-portfolio-store", "data"),
 )
-def compare_graph(selected_bench, active_portfolio_data):
+def compare_graph(selected_bench, language, active_portfolio_data):
+    lang = normalize_language(language)
     df_local = _get_current_portfolio_df(active_portfolio_data)
 
     if not _has_transaction_data(df_local):
-        return _msg_figure("Portfolio has no imported transactions yet.")
+        return _msg_figure(t(lang, "common.no_transactions"))
 
     tickers_clean = (
         df_local["Ticker"].astype(str).str.split(".").str[0].dropna().unique().tolist()
@@ -1293,7 +1325,7 @@ def compare_graph(selected_bench, active_portfolio_data):
     series_colors = _green_black_palette(max(len(bench) + 1, 1))
     fig.add_trace(go.Scatter(
         x=twr_df["date"], y=twr_df["twr_index"],
-        mode="lines", name="Portfolio (TWR = 100)",
+        mode="lines", name=f"{t(lang, 'home.portfolio')} (TWR = 100)",
         line=dict(color=series_colors[0], width=2), connectgaps=False
     ))
 
@@ -1309,18 +1341,18 @@ def compare_graph(selected_bench, active_portfolio_data):
         autosize=True, height=500,
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="#303030",
         margin=dict(t=40, b=40, l=40, r=40),
-        title=dict(text="Normalizovaná hodnota portfolia + porovnání",
+        title=dict(text=t(lang, "home.normalized_compare"),
                    y=1, x=0.5, xanchor="center", yanchor="top",
                    font=dict(size=24, color="white", family="Arial")),
-        xaxis=dict(title=dict(text="Datum", font=dict(size=18, color="white", family="Arial")),
+        xaxis=dict(title=dict(text=t(lang, "home.date"), font=dict(size=18, color="white", family="Arial")),
                    tickfont=dict(color="white", family="Arial"),
                    showgrid=True, gridcolor="rgba(255,255,255,0.1)", gridwidth=1),
-        yaxis=dict(title=dict(text="Index (base = 100)", font=dict(size=18, color="white", family="Arial")),
+        yaxis=dict(title=dict(text=t(lang, "home.index_base_100"), font=dict(size=18, color="white", family="Arial")),
                    tickfont=dict(color="white", family="Arial"),
                    showgrid=True, gridcolor="rgba(255,255,255,0.1)", gridwidth=1),
         showlegend=True,
         legend=dict(
-            title="Aktiva",
+            title=t(lang, "home.assets_legend"),
             orientation="h",
             yanchor="top",
             y=-0.18,
@@ -1342,14 +1374,16 @@ def compare_graph(selected_bench, active_portfolio_data):
     Output("portfolio_v_case", "children"),
     Input("frequency-dropdown", "value"),
     Input("vyber-datum", "date"),
+    Input("language-store", "data"),
     State("active-portfolio-store", "data")
 )
-def graf_portfolio_v_case(freq, vybrane_datum, active_portfolio_data):
+def graf_portfolio_v_case(freq, vybrane_datum, language, active_portfolio_data):
+    lang = normalize_language(language)
     if vybrane_datum is None:
-        return "Vyber datum pro výpočet portfolia."
+        return t(lang, "common.select_date_for_calc")
     df = _get_current_portfolio_df(active_portfolio_data)
     if not _has_transaction_data(df):
-        return "Portfolio has no imported transactions yet."
+        return t(lang, "common.no_transactions")
 
     try:
         tickers = set(portfolio_tickers(df))
@@ -1373,14 +1407,14 @@ def graf_portfolio_v_case(freq, vybrane_datum, active_portfolio_data):
         plot_df = plot_df[(plot_df["prev"].notna()) | (plot_df["next"].notna())]
 
         if plot_df.empty:
-            return "Žádná platná data pro zadané datum."
+            return t(lang, "home.no_valid_data")
 
         fig = go.Figure()
         fig.add_trace(go.Scatter(
             x=plot_df["date"],
             y=plot_df["portfolio_value"],
             mode="lines",
-            name="Portfolio",
+            name=t(lang, "home.portfolio"),
             line=dict(color="#00c896", width=2),
             fill="tozeroy",
             fillcolor="rgba(0, 161, 123, 0.24)",
@@ -1393,17 +1427,17 @@ def graf_portfolio_v_case(freq, vybrane_datum, active_portfolio_data):
             height=500,
             margin=dict(t=40, b=40, l=40, r=40),
             title=dict(
-                text="Hodnota portfolia v čase",
+                text=t(lang, "home.portfolio_value_history"),
                 y=1, x=0.5, xanchor='center', yanchor='top',
                 font=dict(size=24, color='white', family='Arial')
             ),
             xaxis=dict(
-                title=dict(text="Datum", font=dict(size=18, color='white', family='Arial')),
+                title=dict(text=t(lang, "home.date"), font=dict(size=18, color='white', family='Arial')),
                 tickfont=dict(color='white', family='Arial'),
                 showgrid=True, gridcolor='rgba(255,255,255,0.1)', gridwidth=1
             ),
             yaxis=dict(
-                title=dict(text="Hodnota (EUR)", font=dict(size=18, color='white', family='Arial')),
+                title=dict(text=t(lang, "home.value_eur"), font=dict(size=18, color='white', family='Arial')),
                 tickfont=dict(color='white', family='Arial'),
                 showgrid=True, gridcolor='rgba(255,255,255,0.1)', gridwidth=1
             ),
@@ -1423,9 +1457,11 @@ def graf_portfolio_v_case(freq, vybrane_datum, active_portfolio_data):
 @app.callback(
     Output("monthly-dividends-graph", "figure"),
     Input("vyber-datum", "date"),
+    Input("language-store", "data"),
     State("active-portfolio-store", "data"),
 )
-def monthly_dividends_graph(_selected_date, active_portfolio_data):
+def monthly_dividends_graph(_selected_date, language, active_portfolio_data):
+    lang = normalize_language(language)
     def _placeholder(msg):
         fig = go.Figure()
         fig.add_annotation(
@@ -1446,11 +1482,11 @@ def monthly_dividends_graph(_selected_date, active_portfolio_data):
 
     required = {"Type", "Date", "Total Amount"}
     if df_local.empty or not required.issubset(set(df_local.columns)):
-        return _placeholder("Chybi data pro vypocet mesicnich dividend.")
+        return _placeholder(t(lang, "home.monthly_dividend_missing_data"))
 
     all_dates = pd.to_datetime(df_local["Date"], errors="coerce", utc=True).dt.tz_convert(None).dropna()
     if all_dates.empty:
-        return _placeholder("Chybi validni datumy pro timeline.")
+        return _placeholder(t(lang, "home.monthly_dividend_missing_dates"))
 
     month_start = all_dates.min().to_period("M").to_timestamp()
     month_end = all_dates.max().to_period("M").to_timestamp()
@@ -1458,20 +1494,20 @@ def monthly_dividends_graph(_selected_date, active_portfolio_data):
 
     div = df_local[df_local["Type"].astype(str).str.contains("DIVIDEND", na=False)].copy()
     if div.empty:
-        return _no_data_figure("Mesicni dividendovy prijem")
+        return _no_data_figure(t(lang, "home.monthly_dividend_income"))
     else:
         div["Date"] = pd.to_datetime(div["Date"], errors="coerce", utc=True).dt.tz_convert(None)
         div["Total_clean"] = _parse_money_series(div["Total Amount"])
         div = div.dropna(subset=["Date", "Total_clean"])
         if div.empty:
-            return _no_data_figure("Mesicni dividendovy prijem")
+            return _no_data_figure(t(lang, "home.monthly_dividend_income"))
         else:
             div["month"] = div["Date"].dt.to_period("M").dt.to_timestamp()
             monthly = div.groupby("month", as_index=False)["Total_clean"].sum().sort_values("month")
             monthly = full_months.merge(monthly, on="month", how="left").fillna({"Total_clean": 0.0})
 
     if monthly["Total_clean"].abs().sum() == 0:
-        return _no_data_figure("Mesicni dividendovy prijem")
+        return _no_data_figure(t(lang, "home.monthly_dividend_income"))
 
     fig = go.Figure(
         data=[
@@ -1482,7 +1518,7 @@ def monthly_dividends_graph(_selected_date, active_portfolio_data):
                 marker_line_color="#00c896",
                 marker_line_width=1,
                 width=1000 * 60 * 60 * 24 * 20,  # fixed ~20-day width to avoid edge stretching
-                name="Dividendy",
+                name=t(lang, "home.dividend"),
             )
         ]
     )
@@ -1492,12 +1528,12 @@ def monthly_dividends_graph(_selected_date, active_portfolio_data):
         height=500,
         margin=dict(t=40, b=40, l=40, r=40),
         title=dict(
-            text="Mesicni dividendovy prijem",
+            text=t(lang, "home.monthly_dividend_income"),
             y=1, x=0.5, xanchor='center', yanchor='top',
             font=dict(size=24, color='white', family='Arial')
         ),
         xaxis=dict(
-            title=dict(text="Mesic", font=dict(size=18, color='white', family='Arial')),
+            title=dict(text=t(lang, "home.month"), font=dict(size=18, color='white', family='Arial')),
             tickfont=dict(color='white', family='Arial'),
             showgrid=True, gridcolor='rgba(255,255,255,0.1)', gridwidth=1,
             type="date",
@@ -1505,7 +1541,7 @@ def monthly_dividends_graph(_selected_date, active_portfolio_data):
             tickformat="%Y-%m",
         ),
         yaxis=dict(
-            title=dict(text="Castka", font=dict(size=18, color='white', family='Arial')),
+            title=dict(text=t(lang, "home.amount"), font=dict(size=18, color='white', family='Arial')),
             tickfont=dict(color='white', family='Arial'),
             showgrid=True, gridcolor='rgba(255,255,255,0.1)', gridwidth=1,
             rangemode="tozero",
@@ -1559,16 +1595,18 @@ def toggle_home_empty_state(pathname, active_portfolio_data):
     Input("upload-data", "contents"),
     State("upload-data", "filename"),
     State("active-portfolio-store", "data"),
+    State("language-store", "data"),
     prevent_initial_call=True,
 )
-def upload_and_store(contents, filename, active_portfolio_data):
+def upload_and_store(contents, filename, active_portfolio_data, language):
+    lang = normalize_language(language)
     if contents is None:
         return dash.no_update, dash.no_update, dash.no_update
 
     user = get_current_user()
     portfolio_id = (active_portfolio_data or {}).get("portfolio_id") if isinstance(active_portfolio_data, dict) else None
     if not user or not portfolio_id:
-        return dash.no_update, dash.no_update, "No active portfolio selected."
+        return dash.no_update, dash.no_update, t(lang, "common.no_active_portfolio")
 
     try:
         df_uploaded = parse_upload_contents(contents, filename=filename)
@@ -1580,24 +1618,24 @@ def upload_and_store(contents, filename, active_portfolio_data):
             market_data_summary=market_data_summary,
         )
         portfolios = list_user_portfolios(user["id"])
-        status_parts = [f"Imported {len(df_uploaded)} rows into the selected portfolio."]
+        status_parts = [t(lang, "home.upload_success", rows=len(df_uploaded))]
         downloaded = market_data_summary.get("downloaded_tickers") or []
         if downloaded:
-            status_parts.append(f"Downloaded market data for: {', '.join(downloaded)}.")
+            status_parts.append(t(lang, "home.market_data_downloaded", tickers=", ".join(downloaded)))
         overlap_start = market_data_summary.get("overlap_start")
         overlap_end = market_data_summary.get("overlap_end")
         if overlap_start and overlap_end:
-            status_parts.append(f"Price overlap window: {overlap_start} to {overlap_end}.")
+            status_parts.append(t(lang, "home.price_overlap", start=overlap_start, end=overlap_end))
         import_warnings = df_uploaded.attrs.get("import_warnings") or []
         if import_warnings:
-            status_parts.append("Autocorrections: " + " ".join(import_warnings))
+            status_parts.append(t(lang, "home.autocorrections", warnings=" ".join(import_warnings)))
         return (
             portfolios,
             {"portfolio_id": portfolio_id},
             " ".join(status_parts),
         )
     except Exception as exc:
-        return dash.no_update, dash.no_update, f"Upload failed. {exc}"
+        return dash.no_update, dash.no_update, t(lang, "home.upload_failed", error=str(exc))
 
 
 @app.callback(
@@ -1614,6 +1652,45 @@ def toggle_dashboard_section(n_clicks):
     )
  
 
+@app.callback(
+    Output("home-hero-title", "children"),
+    Output("home-hero-subtitle", "children"),
+    Output("dashboard-section-title-portfolio-table", "children"),
+    Output("dashboard-section-title-asset-risk-table", "children"),
+    Output("dashboard-section-title-portfolio-value-history", "children"),
+    Output("dashboard-section-title-asset-selection", "children"),
+    Output("dashboard-section-title-benchmark-compare", "children"),
+    Output("dashboard-section-title-portfolio-breakdown", "children"),
+    Output("dashboard-section-title-monthly-dividends", "children"),
+    Output("home-frequency-label", "children"),
+    Output("frequency-dropdown", "options"),
+    Output("home-assets-label", "children"),
+    Output("home-start-date-label", "children"),
+    Output("vyber-start_date", "placeholder"),
+    Output("home-compare-label", "children"),
+    Input("language-store", "data"),
+)
+def localize_home_static_text(language):
+    lang = normalize_language(language)
+    return (
+        t(lang, "home.title"),
+        t(lang, "home.subtitle"),
+        t(lang, "home.section.portfolio_table"),
+        t(lang, "home.section.asset_risk"),
+        t(lang, "home.section.value_history"),
+        t(lang, "home.section.asset_selection"),
+        t(lang, "home.section.benchmark_compare"),
+        t(lang, "home.section.breakdown"),
+        t(lang, "home.section.monthly_dividends"),
+        t(lang, "home.frequency_label"),
+        _home_frequency_options(lang),
+        t(lang, "home.assets_label"),
+        t(lang, "home.start_date_label"),
+        t(lang, "sidebar.select_date"),
+        t(lang, "home.compare_label"),
+    )
+
+
 layout = html.Div(
     className="home-page",
     children=[
@@ -1623,8 +1700,8 @@ layout = html.Div(
                 html.Div(
                     className="hero",
                     children=[
-                        html.H1("Analýza portfolia", className="nadpis"),
-                        html.P("Školní projekt - testovací verze", className="podnadpis"),
+                        html.H1("Analýza portfolia", id="home-hero-title", className="nadpis"),
+                        html.P("Školní projekt - testovací verze", id="home-hero-subtitle", className="podnadpis"),
                     ],
                 ),
 
@@ -1663,9 +1740,9 @@ layout = html.Div(
                                     html.Div(
                                         className="dropdown-graph-wrapper",
                                         children=[
-                                            html.H2("Vyber frekvenci dat:"),
+                                            html.H2("Vyber frekvenci dat:", id="home-frequency-label"),
                                             dcc.Dropdown(
-                                                ['Daily', 'Monthly'],
+                                                _home_frequency_options("cs"),
                                                 'Daily',
                                                 id='frequency-dropdown',
                                                 className="dropdown"
@@ -1680,7 +1757,7 @@ layout = html.Div(
                                     html.Div(
                                         className="dropdown-graph-wrapper",
                                         children=[
-                                            html.H2("Vyber aktiva:"),
+                                            html.H2("Vyber aktiva:", id="home-assets-label"),
                                             dcc.Dropdown(
                                                 tickers_l,
                                                 tickers_l_default,
@@ -1688,7 +1765,7 @@ layout = html.Div(
                                                 multi=True,
                                                 className="dropdown"
                                             ),
-                                            html.H2("Vyber pocatecni datum:"),
+                                            html.H2("Vyber pocatecni datum:", id="home-start-date-label"),
                                             dcc.DatePickerSingle(
                                                 id="vyber-start_date",
                                                 date=min(df_prices["date"]),
@@ -1705,7 +1782,7 @@ layout = html.Div(
                                     html.Div(
                                         className="dropdown-graph-wrapper",
                                         children=[
-                                            html.H2("Vyber aktiva na porovnani:"),
+                                            html.H2("Vyber aktiva na porovnani:", id="home-compare-label"),
                                             dcc.Dropdown(
                                                 tickers_all,
                                                 tickers_default,

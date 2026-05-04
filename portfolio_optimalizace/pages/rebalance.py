@@ -11,6 +11,7 @@ from backend.services.portfolio_service import empty_transactions_dataframe, loa
 from backend.services.rebalance_portfolio_service import create_rebalance_portfolio
 from backend.services.portfolio_service import list_user_portfolios
 from backend.session import get_current_user
+from utils.i18n import bool_text, normalize_language, t
 
 register_page(__name__, path="/rebalance")
 
@@ -689,6 +690,76 @@ def save_cvar_portfolio(n_clicks, active_portfolio_data, portfolio_name, rows):
     return _save_rebalance_result(active_portfolio_data, portfolio_name, rows, "rebalance_cvar")
 
 
+@app.callback(
+    Output("rb-page-title", "children"),
+    Output("rb-mv-info", "data-tooltip"),
+    Output("rb-mv-label", "children"),
+    Output("mv-longonly", "options"),
+    Output("mv-run", "children"),
+    Output("mv-save-name", "placeholder"),
+    Output("mv-save-button", "children"),
+    Output("mv-clip", "title"),
+    Output("mv-table", "columns"),
+    Output("rb-rp-info", "data-tooltip"),
+    Output("rb-rp-label", "children"),
+    Output("rp-longonly", "options"),
+    Output("rp-run", "children"),
+    Output("rp-save-name", "placeholder"),
+    Output("rp-save-button", "children"),
+    Output("rp-clip", "title"),
+    Output("rp-table", "columns"),
+    Output("rb-cvar-info", "data-tooltip"),
+    Output("rb-cvar-label", "children"),
+    Output("cvar-longonly", "options"),
+    Output("cvar-run", "children"),
+    Output("cvar-save-name", "placeholder"),
+    Output("cvar-save-button", "children"),
+    Output("cvar-clip", "title"),
+    Output("cvar-table", "columns"),
+    Input("language-store", "data"),
+)
+def localize_rebalance_static_text(language):
+    lang = normalize_language(language)
+    long_only_options = [{"label": t(lang, "rebalance.long_only"), "value": "LONG"}]
+    return (
+        t(lang, "rebalance.page_title"),
+        t(lang, "rebalance.mv_info"),
+        t(lang, "rebalance.risk_aversion"),
+        long_only_options,
+        t(lang, "rebalance.calculate_mv"),
+        t(lang, "sidebar.portfolio_name"),
+        t(lang, "rebalance.save_as_portfolio"),
+        t(lang, "rebalance.copy_table"),
+        [
+            {"name": t(lang, "rebalance.ticker"), "id": "ticker"},
+            {"name": t(lang, "rebalance.weight"), "id": "weight", "type": "numeric", "format": {"specifier": ".4f"}},
+        ],
+        t(lang, "rebalance.rp_info"),
+        t(lang, "rebalance.leverage_cap"),
+        long_only_options,
+        t(lang, "rebalance.calculate_rp"),
+        t(lang, "sidebar.portfolio_name"),
+        t(lang, "rebalance.save_as_portfolio"),
+        t(lang, "rebalance.copy_table"),
+        [
+            {"name": t(lang, "rebalance.ticker"), "id": "ticker"},
+            {"name": t(lang, "rebalance.weight"), "id": "weight", "type": "numeric", "format": {"specifier": ".4f"}},
+            {"name": t(lang, "rebalance.risk_contrib"), "id": "rc", "type": "numeric", "format": {"specifier": ".4f"}},
+        ],
+        t(lang, "rebalance.cvar_info"),
+        t(lang, "rebalance.confidence_level"),
+        long_only_options,
+        t(lang, "rebalance.calculate_cvar"),
+        t(lang, "sidebar.portfolio_name"),
+        t(lang, "rebalance.save_as_portfolio"),
+        t(lang, "rebalance.copy_table"),
+        [
+            {"name": t(lang, "rebalance.ticker"), "id": "ticker"},
+            {"name": t(lang, "rebalance.weight"), "id": "weight", "type": "numeric", "format": {"specifier": ".4f"}},
+        ],
+    )
+
+
 
 
 
@@ -739,34 +810,33 @@ def save_cvar_portfolio(n_clicks, active_portfolio_data, portfolio_name, rows):
 
 
 layout = html.Div(
-    
     className="rb-page",
     children=[
-        html.H1("Rebalance portfolia", className="nadpis_predikce"),
-
+        html.H1("Rebalance portfolia", id="rb-page-title", className="nadpis_predikce"),
         html.Div(
             className="rb-grid",
             children=[
-                # ====== LEFT: Mean-Variance ======
                 html.Div(
                     className="rb-card",
                     children=[
-                        html.H2("Mean–Variance (Markowitz)", className="rb-subtitle"),
-
+                        html.H2("Mean-Variance (Markowitz)", id="rb-mv-title", className="rb-subtitle"),
                         html.Span(
                             "i",
+                            id="rb-mv-info",
                             className="rb-info",
-                            **{"data-tooltip": "Mean-Variance: hleda vahy ktere maximalizuji E[R] - lambda*risk. Vetsi lambda znamena opatrnejsi portfolio. Weight je podil aktiva. Long-only = bez short pozic."},
+                            **{"data-tooltip": "Mean-Variance: hled? v?hy, kter? maximalizuj? E[R] - lambda*risk. V?t?? lambda znamen? opatrn?j?? portfolio. Weight je pod?l aktiva. Long-only = bez short pozic."},
                         ),
-                        html.Label("Risk aversion (λ)", className="rb-label"),
+                        html.Label("Risk aversion (?)", id="rb-mv-label", className="rb-label"),
                         dcc.Slider(
                             id="mv-lambda",
-                            min=0.0, max=50.0, step=0.5, value=5.0,
+                            min=0.0,
+                            max=50.0,
+                            step=0.5,
+                            value=5.0,
                             marks=None,
                             tooltip={"placement": "bottom", "always_visible": True},
-                            className="rb-slider"
+                            className="rb-slider",
                         ),
-
                         html.Div(
                             className="rb-actions",
                             children=[
@@ -775,7 +845,7 @@ layout = html.Div(
                                     children=[
                                         dcc.Checklist(
                                             id="mv-longonly",
-                                            options=[{"label": "Long-only (w ≥ 0)", "value": "LONG"}],
+                                            options=[{"label": "Long-only (w ? 0)", "value": "LONG"}],
                                             value=["LONG"],
                                             className="rb-checklist",
                                             inputClassName="rb-check-input",
@@ -786,13 +856,11 @@ layout = html.Div(
                                 html.Div(
                                     className="rb-action",
                                     children=[
-                                        html.Button("Spočítat (MV)", id="mv-run", n_clicks=0,
-                                                    className="rb-btn rb-pill")
+                                        html.Button("Spo??tat (MV)", id="mv-run", n_clicks=0, className="rb-btn rb-pill")
                                     ],
                                 ),
                             ],
                         ),
-
                         html.Div(className="rb-divider"),
                         html.Div(id="mv-status", className="rb-status"),
                         html.Div(
@@ -821,19 +889,17 @@ layout = html.Div(
                                 ),
                                 dcc.Clipboard(
                                     id="mv-clip",
-                                    title="Kopirovat tabulku do schranky",
+                                    title="Kop?rovat tabulku do schr?nky",
                                     className="rb-copy-btn",
-                                )
+                                ),
                             ],
                         ),
                         html.Div(id="mv-save-status", className="rb-status"),
-
                         dash_table.DataTable(
                             id="mv-table",
                             columns=[
                                 {"name": "Ticker", "id": "ticker"},
-                                {"name": "Weight", "id": "weight", "type": "numeric",
-                                 "format": {"specifier": ".4f"}},
+                                {"name": "Weight", "id": "weight", "type": "numeric", "format": {"specifier": ".4f"}},
                             ],
                             data=[],
                             page_size=10,
@@ -844,27 +910,27 @@ layout = html.Div(
                         ),
                     ],
                 ),
-
-                # ====== RIGHT: Risk Parity ======
                 html.Div(
                     className="rb-card",
                     children=[
-                        html.H2("Risk Parity (ERC)", className="rb-subtitle"),
-
+                        html.H2("Risk Parity (ERC)", id="rb-rp-title", className="rb-subtitle"),
                         html.Span(
                             "i",
+                            id="rb-rp-info",
                             className="rb-info",
-                            **{"data-tooltip": "Risk Parity (ERC): nastavuje vahy tak, aby kazde aktivum podobne prispivalo k riziku. Leverage cap omezuje sumu abs vah. Risk contrib ukazuje prispevek aktiva k riziku."},
+                            **{"data-tooltip": "Risk Parity (ERC): nastavuje v?hy tak, aby ka?d? aktivum podobn? p?isp?valo k riziku. Leverage cap omezuje sumu abs vah. Risk contrib ukazuje p??sp?vek aktiva k riziku."},
                         ),
-                        html.Label("Leverage cap (Σ|w|)", className="rb-label"),
+                        html.Label("Leverage cap (?|w|)", id="rb-rp-label", className="rb-label"),
                         dcc.Slider(
                             id="rp-gross-cap",
-                            min=1.0, max=3.0, step=0.1, value=1.0,
+                            min=1.0,
+                            max=3.0,
+                            step=0.1,
+                            value=1.0,
                             marks=None,
                             tooltip={"placement": "bottom", "always_visible": True},
-                            className="rb-slider"
+                            className="rb-slider",
                         ),
-
                         html.Div(
                             className="rb-actions",
                             children=[
@@ -873,7 +939,7 @@ layout = html.Div(
                                     children=[
                                         dcc.Checklist(
                                             id="rp-longonly",
-                                            options=[{"label": "Long-only (w ≥ 0)", "value": "LONG"}],
+                                            options=[{"label": "Long-only (w ? 0)", "value": "LONG"}],
                                             value=["LONG"],
                                             className="rb-checklist",
                                             inputClassName="rb-check-input",
@@ -884,13 +950,11 @@ layout = html.Div(
                                 html.Div(
                                     className="rb-action",
                                     children=[
-                                        html.Button("Spočítat (RP)", id="rp-run", n_clicks=0,
-                                                    className="rb-btn rb-pill")
+                                        html.Button("Spo??tat (RP)", id="rp-run", n_clicks=0, className="rb-btn rb-pill")
                                     ],
                                 ),
                             ],
                         ),
-
                         html.Div(className="rb-divider"),
                         html.Div(id="rp-status", className="rb-status"),
                         html.Div(
@@ -919,21 +983,18 @@ layout = html.Div(
                                 ),
                                 dcc.Clipboard(
                                     id="rp-clip",
-                                    title="Kopirovat tabulku do schranky",
+                                    title="Kop?rovat tabulku do schr?nky",
                                     className="rb-copy-btn",
-                                )
+                                ),
                             ],
                         ),
                         html.Div(id="rp-save-status", className="rb-status"),
-
                         dash_table.DataTable(
                             id="rp-table",
                             columns=[
                                 {"name": "Ticker", "id": "ticker"},
-                                {"name": "Weight", "id": "weight", "type": "numeric",
-                                 "format": {"specifier": ".4f"}},
-                                {"name": "Risk contrib", "id": "rc", "type": "numeric",
-                                 "format": {"specifier": ".4f"}},
+                                {"name": "Weight", "id": "weight", "type": "numeric", "format": {"specifier": ".4f"}},
+                                {"name": "Risk contrib", "id": "rc", "type": "numeric", "format": {"specifier": ".4f"}},
                             ],
                             data=[],
                             page_size=10,
@@ -944,26 +1005,27 @@ layout = html.Div(
                         ),
                     ],
                 ),
-
                 html.Div(
                     className="rb-card",
                     children=[
-                        html.H2("CVaR / Expected Shortfall", className="rb-subtitle"),
-
+                        html.H2("CVaR / Expected Shortfall", id="rb-cvar-title", className="rb-subtitle"),
                         html.Span(
                             "i",
+                            id="rb-cvar-info",
                             className="rb-info",
-                            **{"data-tooltip": "CVaR / Expected Shortfall: minimalizuje prumernou ztratu v nejhorsich scenarich. Alpha urcuje confidence level (napr. 0.95 = nejhorsich 5 procent). Weight je navrzena vaha."},
+                            **{"data-tooltip": "CVaR / Expected Shortfall: minimalizuje pr?m?rnou ztr?tu v nejhor??ch sc?n???ch. Alpha ur?uje confidence level (nap?. 0.95 = nejhor??ch 5 procent). Weight je navr?en? v?ha."},
                         ),
-                        html.Label("Confidence level (α)", className="rb-label"),
+                        html.Label("Confidence level (?)", id="rb-cvar-label", className="rb-label"),
                         dcc.Slider(
                             id="cvar-alpha",
-                            min=0.80, max=0.99, step=0.01, value=0.95,
+                            min=0.80,
+                            max=0.99,
+                            step=0.01,
+                            value=0.95,
                             marks=None,
                             tooltip={"placement": "bottom", "always_visible": True},
-                            className="rb-slider"
+                            className="rb-slider",
                         ),
-
                         html.Div(
                             className="rb-actions",
                             children=[
@@ -972,7 +1034,7 @@ layout = html.Div(
                                     children=[
                                         dcc.Checklist(
                                             id="cvar-longonly",
-                                            options=[{"label": "Long-only (w ≥ 0)", "value": "LONG"}],
+                                            options=[{"label": "Long-only (w ? 0)", "value": "LONG"}],
                                             value=["LONG"],
                                             className="rb-checklist",
                                             inputClassName="rb-check-input",
@@ -983,13 +1045,11 @@ layout = html.Div(
                                 html.Div(
                                     className="rb-action",
                                     children=[
-                                        html.Button("Spočítat (CVaR)", id="cvar-run", n_clicks=0,
-                                                    className="rb-btn rb-pill")
+                                        html.Button("Spo??tat (CVaR)", id="cvar-run", n_clicks=0, className="rb-btn rb-pill")
                                     ],
                                 ),
                             ],
                         ),
-
                         html.Div(className="rb-divider"),
                         html.Div(id="cvar-status", className="rb-status"),
                         html.Div(
@@ -1018,19 +1078,17 @@ layout = html.Div(
                                 ),
                                 dcc.Clipboard(
                                     id="cvar-clip",
-                                    title="Kopirovat tabulku do schranky",
+                                    title="Kop?rovat tabulku do schr?nky",
                                     className="rb-copy-btn",
-                                )
+                                ),
                             ],
                         ),
                         html.Div(id="cvar-save-status", className="rb-status"),
-
                         dash_table.DataTable(
                             id="cvar-table",
                             columns=[
                                 {"name": "Ticker", "id": "ticker"},
-                                {"name": "Weight", "id": "weight", "type": "numeric",
-                                "format": {"specifier": ".4f"}},
+                                {"name": "Weight", "id": "weight", "type": "numeric", "format": {"specifier": ".4f"}},
                             ],
                             data=[],
                             page_size=10,
@@ -1042,6 +1100,6 @@ layout = html.Div(
                     ],
                 ),
             ],
-        )
+        ),
     ],
 )

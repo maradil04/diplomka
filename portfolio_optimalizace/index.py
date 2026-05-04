@@ -3,7 +3,6 @@ import base64
 from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 
 from app import app
-from backend.services.report_service import generate_portfolio_report_pdf
 from backend.services.portfolio_service import (
     create_user_portfolio,
     delete_user_portfolio,
@@ -12,10 +11,12 @@ from backend.services.portfolio_service import (
     resolve_active_portfolio,
     set_active_portfolio,
 )
+from backend.services.report_service import generate_portfolio_report_pdf
 from backend.session import get_current_user
 from components.app_shell import build_app_shell
 from components.portfolio_sidebar import _sidebar_style
 from pages import home, predikce, rebalance
+from utils.i18n import normalize_language, t
 
 server = app.server
 
@@ -27,6 +28,7 @@ app.layout = html.Div(
         dcc.Store(id="auth-store", storage_type="session"),
         dcc.Store(id="portfolio-list-store", storage_type="session"),
         dcc.Store(id="active-portfolio-store", storage_type="session"),
+        dcc.Store(id="language-store", storage_type="session", data="cs"),
         dcc.Store(id="ui-store", storage_type="session", data={"portfolio_sidebar_open": False, "menu_sidebar_open": False}),
         dcc.Download(id="portfolio-report-download"),
         dcc.Interval(id="auth-bootstrap", interval=0, n_intervals=0, max_intervals=1),
@@ -37,7 +39,7 @@ app.layout = html.Div(
             className="home-empty-state",
             style={"display": "none"},
             children=[
-                html.Div("ČEKÁNÍ NA VLOŽENÍ PORTFOLIA", className="home-empty-state-text"),
+                html.Div(t("cs", "app.waiting_overlay"), id="dashboard-empty-overlay-text", className="home-empty-state-text"),
             ],
         ),
         html.Div(
@@ -46,6 +48,7 @@ app.layout = html.Div(
                 auth_data={},
                 portfolios=[],
                 active_portfolio_id=None,
+                language="cs",
                 ui_data={"portfolio_sidebar_open": False, "menu_sidebar_open": False},
             ),
         ),
@@ -93,6 +96,27 @@ def _serialize_auth(user):
         "email": user["email"],
         "avatar_url": user["avatar_url"],
     }
+
+
+@app.callback(
+    Output("language-store", "data"),
+    Input("language-switch", "value"),
+    State("language-store", "data"),
+    prevent_initial_call=True,
+)
+def sync_language(language_value, current_language):
+    normalized = normalize_language(language_value)
+    if normalized == normalize_language(current_language):
+        return no_update
+    return normalized
+
+
+@app.callback(
+    Output("dashboard-empty-overlay-text", "children"),
+    Input("language-store", "data"),
+)
+def localize_overlay_text(language):
+    return t(language, "app.waiting_overlay")
 
 
 @app.callback(
@@ -201,9 +225,10 @@ def toggle_menu_sidebar(menu_clicks, close_clicks, ui_data):
     Input({"type": "portfolio-select", "index": ALL}, "n_clicks"),
     Input({"type": "portfolio-delete", "index": ALL}, "n_clicks"),
     State("auth-store", "data"),
+    State("language-store", "data"),
     prevent_initial_call=True,
 )
-def handle_portfolio_actions(_select_clicks, _delete_clicks, auth_data):
+def handle_portfolio_actions(_select_clicks, _delete_clicks, auth_data, language):
     if not (auth_data or {}).get("authenticated"):
         return no_update, no_update, no_update
 
@@ -219,15 +244,15 @@ def handle_portfolio_actions(_select_clicks, _delete_clicks, auth_data):
     if triggered.get("type") == "portfolio-select":
         portfolio = set_active_portfolio(user["id"], portfolio_id)
         if not portfolio:
-            return no_update, no_update, "Portfolio could not be selected."
+            return no_update, no_update, t(language, "index.portfolio_select_failed")
         portfolios = list_user_portfolios(user["id"])
-        return portfolios, {"portfolio_id": portfolio["id"]}, f"Active portfolio: {portfolio['name']}"
+        return portfolios, {"portfolio_id": portfolio["id"]}, t(language, "index.active_portfolio", name=portfolio["name"])
 
     if triggered.get("type") == "portfolio-delete":
         active, portfolios = delete_user_portfolio(user["id"], portfolio_id)
         if not active:
-            return portfolios, {"portfolio_id": None}, "Portfolio deleted."
-        return portfolios, {"portfolio_id": active["id"]}, f"Portfolio deleted. Active portfolio: {active['name']}"
+            return portfolios, {"portfolio_id": None}, t(language, "index.portfolio_deleted")
+        return portfolios, {"portfolio_id": active["id"]}, t(language, "index.portfolio_deleted_active", name=active["name"])
 
     return no_update, no_update, no_update
 
@@ -240,19 +265,20 @@ def handle_portfolio_actions(_select_clicks, _delete_clicks, auth_data):
     Input("portfolio-create-button", "n_clicks"),
     State("portfolio-create-name", "value"),
     State("auth-store", "data"),
+    State("language-store", "data"),
     prevent_initial_call=True,
 )
-def create_portfolio_from_sidebar(n_clicks, portfolio_name, auth_data):
+def create_portfolio_from_sidebar(n_clicks, portfolio_name, auth_data, language):
     if not n_clicks or not (auth_data or {}).get("authenticated"):
         return no_update, no_update, no_update, no_update
 
     user = get_current_user()
     if not user:
-        return no_update, no_update, no_update, "Authentication required."
+        return no_update, no_update, no_update, t(language, "common.authentication_required")
 
-    portfolio = create_user_portfolio(user["id"], portfolio_name)
+    portfolio = create_user_portfolio(user["id"], portfolio_name or t(language, "sidebar.portfolio_name"))
     portfolios = list_user_portfolios(user["id"])
-    status = f"Created portfolio: {portfolio['name']}"
+    status = t(language, "index.created_portfolio", name=portfolio["name"])
     return portfolios, {"portfolio_id": portfolio["id"]}, "", status
 
 
@@ -262,6 +288,7 @@ def create_portfolio_from_sidebar(n_clicks, portfolio_name, auth_data):
     Input("download-portfolio-report", "n_clicks"),
     State("active-portfolio-store", "data"),
     State("vyber-datum", "date"),
+    State("language-store", "data"),
     prevent_initial_call=True,
     running=[
         (
@@ -271,22 +298,23 @@ def create_portfolio_from_sidebar(n_clicks, portfolio_name, auth_data):
         ),
     ],
 )
-def export_portfolio_report(n_clicks, active_portfolio_data, selected_date):
+def export_portfolio_report(n_clicks, active_portfolio_data, selected_date, language):
     if not n_clicks:
         return no_update, no_update
 
     user = get_current_user()
     portfolio_id = _portfolio_id_from_state(active_portfolio_data)
     if not user:
-        return no_update, "Authentication required."
+        return no_update, t(language, "common.authentication_required")
     if not portfolio_id:
-        return no_update, "No active portfolio selected."
+        return no_update, t(language, "common.no_active_portfolio")
 
     try:
         pdf_bytes, filename = generate_portfolio_report_pdf(
             user_id=user["id"],
             portfolio_id=portfolio_id,
             report_date=selected_date,
+            language=language,
         )
         return (
             {
@@ -295,10 +323,10 @@ def export_portfolio_report(n_clicks, active_portfolio_data, selected_date):
                 "type": "application/pdf",
                 "base64": True,
             },
-            f"PDF report generated: {filename}",
+            t(language, "index.report_generated", filename=filename),
         )
     except Exception as exc:
-        return no_update, f"PDF export failed: {exc}"
+        return no_update, t(language, "index.report_failed", error=str(exc))
 
 
 @app.callback(
@@ -306,13 +334,15 @@ def export_portfolio_report(n_clicks, active_portfolio_data, selected_date):
     Input("auth-store", "data"),
     Input("portfolio-list-store", "data"),
     Input("active-portfolio-store", "data"),
+    Input("language-store", "data"),
 )
-def render_shell(auth_data, portfolio_list, active_portfolio):
+def render_shell(auth_data, portfolio_list, active_portfolio, language):
     return build_app_shell(
         auth_data=auth_data or {},
         portfolios=portfolio_list or [],
         active_portfolio_id=(active_portfolio or {}).get("portfolio_id"),
         ui_data={"portfolio_sidebar_open": False, "menu_sidebar_open": False},
+        language=language or "cs",
     )
 
 
