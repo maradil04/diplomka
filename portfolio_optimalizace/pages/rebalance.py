@@ -11,13 +11,12 @@ from backend.services.portfolio_service import empty_transactions_dataframe, loa
 from backend.services.rebalance_portfolio_service import create_rebalance_portfolio
 from backend.services.portfolio_service import list_user_portfolios
 from backend.session import get_current_user
-from utils.i18n import bool_text, normalize_language, t
+from utils.i18n import normalize_language, t
 
 register_page(__name__, path="/rebalance")
 
 df_empty = empty_transactions_dataframe()
 df_prices = load_market_data().copy()
-df_prices_all = load_market_data().copy()
 df_prices["Ticker_clean"] = df_prices["Ticker"].str.split(".").str[0]
 df_prices_all = df_prices.copy()
 

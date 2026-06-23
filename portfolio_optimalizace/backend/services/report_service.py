@@ -18,7 +18,7 @@ from backend.repositories.portfolios import get_portfolio_for_user
 from backend.services.market_data_service import load_market_data
 from backend.services.portfolio_service import empty_transactions_dataframe, load_portfolio_transactions_dataframe
 from utils.i18n import normalize_language
-from utils.portfolio_history import build_portfolio_value_history, portfolio_tickers
+from utils.portfolio_history import portfolio_tickers
 
 
 REPORT_COLORS = {

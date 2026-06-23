@@ -87,7 +87,7 @@ def normalize_currency_code(value):
     return _CURRENCY_ALIASES.get(currency, currency)
 
 
-def convert_amount_to_eur(amount, currency, fx_rate=None):
+def convert_amount_to_eur(amount, currency):
     parsed_amount = parse_money_value(amount)
     if parsed_amount is None:
         return None
@@ -95,10 +95,6 @@ def convert_amount_to_eur(amount, currency, fx_rate=None):
     normalized_currency = normalize_currency_code(currency) or "EUR"
     if normalized_currency == "EUR":
         return round(parsed_amount, 2)
-
-    parsed_fx_rate = parse_money_value(fx_rate)
-    if parsed_fx_rate and parsed_fx_rate > 0:
-        return round(parsed_amount / parsed_fx_rate, 2)
 
     fallback_rate = _FALLBACK_EUR_RATES.get(normalized_currency)
     if fallback_rate is None:

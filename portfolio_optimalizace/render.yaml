@@ -1,7 +1,21 @@
+databases:
+  - name: portfolio-optimalizace-db
+    databaseName: portfolio_optimalizace
+    user: portfolio_user
+
 services:
   - type: web
     name: portfolio-optimalizace
     env: python
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn index:server
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: portfolio-optimalizace-db
+          property: connectionString
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+      - key: APP_SECRET
+        generateValue: true
     autoDeploy: true

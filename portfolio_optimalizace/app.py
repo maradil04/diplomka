@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from dash import Dash
@@ -9,8 +10,9 @@ from backend.session import configure_session, register_route_guards
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
-load_dotenv(PROJECT_ROOT / ".env")
-load_dotenv(PROJECT_ROOT / "backend" / ".env")
+if not os.getenv("RENDER"):
+    load_dotenv(PROJECT_ROOT / ".env")
+    load_dotenv(PROJECT_ROOT / "backend" / ".env")
 
 app = Dash(
     __name__,

@@ -10,19 +10,36 @@ from pathlib import Path
 from backend.models import POST_SCHEMA_MIGRATIONS, SCHEMA_STATEMENTS, TICKER_MAPPING_SEED_ROWS
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-load_dotenv(PROJECT_ROOT / ".env")
-load_dotenv(PROJECT_ROOT / "backend" / ".env")
+if not os.getenv("RENDER"):
+    load_dotenv(PROJECT_ROOT / ".env")
+    load_dotenv(PROJECT_ROOT / "backend" / ".env")
 
 
 def get_database_url() -> str:
     database_url = os.getenv("DATABASE_URL")
     if not database_url:
         raise RuntimeError("DATABASE_URL is not configured.")
+    parsed = urlparse(database_url)
+    if os.getenv("RENDER") and parsed.hostname in {"localhost", "127.0.0.1"}:
+        raise RuntimeError(
+            "DATABASE_URL points to localhost on Render. Configure it with the "
+            "Render Postgres internal connection string."
+        )
     return database_url
 
 
 def get_connection():
-    return psycopg.connect(get_database_url(), row_factory=dict_row)
+    database_url = get_database_url()
+    try:
+        return psycopg.connect(database_url, row_factory=dict_row)
+    except psycopg.OperationalError as exc:
+        parsed = urlparse(database_url)
+        host = parsed.hostname or "<missing host>"
+        raise RuntimeError(
+            f"Could not connect to PostgreSQL host '{host}'. On Render, set "
+            "DATABASE_URL to the Render Postgres internal connection string "
+            "for a database in the same region as this web service."
+        ) from exc
 
 
 def get_db():

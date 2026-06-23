@@ -93,8 +93,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Accepted Type values: BUY - MARKET, SELL - MARKET, CASH TOP-UP, CASH WITHDRAWAL, ROBO MANAGEMENT FEE, DIVIDEND.",
     },
     "sidebar.import_note": {
-        "cs": "Importer umí opravit kapitalizaci a běžné varianty názvů sloupců, ale odmítne soubory s chybějícími povinnými informacemi.",
-        "en": "The importer can auto-fix capitalization and common column-name variants, but it will reject files with missing required information.",
+        "cs": "Sloupec FX Rate není povinný a pro přepočet se nepoužívá. Částky mimo EUR se převádějí do EUR pomocí přibližných vestavěných kurzů. Importer umí opravit kapitalizaci a běžné varianty názvů sloupců.",
+        "en": "FX Rate is not required and is not used for conversion. Non-EUR amounts are converted to EUR using approximate built-in rates. The importer can auto-fix capitalization and common column-name variants.",
     },
     "sidebar.choose_csv": {
         "cs": "Vybrat CSV soubor",

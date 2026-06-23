@@ -22,6 +22,15 @@ CANONICAL_IMPORT_COLUMNS = [
     "Currency",
     "FX Rate",
 ]
+DISPLAY_IMPORT_COLUMNS = [
+    "Date",
+    "Ticker",
+    "Type",
+    "Quantity",
+    "Price per share",
+    "Total Amount",
+    "Currency",
+]
 REQUIRED_IMPORT_COLUMNS = ["Date", "Type", "Total Amount", "Currency"]
 REQUIRED_BY_TYPE = {
     "BUY - MARKET": ["Ticker", "Quantity"],
@@ -168,8 +177,11 @@ def _ensure_expected_columns(dataframe: pd.DataFrame):
         raise ValueError(
             "Missing required CSV columns: "
             + ", ".join(missing)
-            + ". Expected columns are: "
-            + ", ".join(CANONICAL_IMPORT_COLUMNS)
+            + ". Required columns are: "
+            + ", ".join(REQUIRED_IMPORT_COLUMNS)
+            + ". Optional columns are: "
+            + ", ".join(column for column in DISPLAY_IMPORT_COLUMNS if column not in REQUIRED_IMPORT_COLUMNS)
+            + ". FX Rate is accepted when present but is not required and is not used for EUR conversion."
         )
 
     duplicate_columns = dataframe.columns[dataframe.columns.duplicated()].tolist()
@@ -312,7 +324,6 @@ def _convert_total_amount_to_eur_string(cleaned_row):
     converted = convert_amount_to_eur(
         cleaned_row.get("Total Amount"),
         cleaned_row.get("Currency"),
-        cleaned_row.get("FX Rate"),
     )
     if converted is None:
         return None

@@ -7,7 +7,6 @@ from backend.repositories.portfolios import (
     create_portfolio,
     delete_portfolio_for_user,
     ensure_default_portfolio,
-    get_most_recent_portfolio_for_user,
     get_portfolio_for_user,
     list_portfolios_for_user,
 )

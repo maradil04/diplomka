@@ -112,7 +112,7 @@ def build_portfolio_sidebar(portfolios, active_portfolio_id, is_open, language="
                                                 style={"marginTop": "12px", "marginBottom": "8px"},
                                             ),
                                             html.Code(
-                                                "Date, Ticker, Type, Quantity, Price per share, Total Amount, Currency, FX Rate",
+                                                "Date, Ticker, Type, Quantity, Price per share, Total Amount, Currency",
                                                 style={
                                                     "display": "block",
                                                     "whiteSpace": "normal",

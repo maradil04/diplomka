@@ -57,7 +57,7 @@ VOLATILITY_COLOR = "#ffd37a"
 VOLATILITY_FILL_STRONG = "rgba(255, 211, 122, 0.20)"
 VOLATILITY_FILL_SOFT = "rgba(255, 211, 122, 0.10)"
 ENABLE_SARIMA = False
-GARCH_CANDIDATES = ((1, 1),)
+GARCH_CANDIDATES = tuple((p, q) for p in range(0, 3) for q in range(0, 3))
 
 
 def _portfolio_id_from_state(active_portfolio_data):
